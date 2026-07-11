@@ -22,7 +22,7 @@
 2. **How to Fix It:**
    - Open the configuration file.
    - Identify the event name causing the issue.
-   - Add the event name to the **whitelisted events list** in the config.
+   - Add the event name to the **whitelisted events list** in the config. ( you will get a lot of diffrent bans at the begining please do whitelist the events and you will see it workin perfectly)
 3. **Still Have Issues?**
    - Read our docs: [SecureServe Documentation](https://peleg.gitbook.io/secureserve/)
    - Join our [Discord](https://discord.gg/STXXenjkbp) and open a ticket for personalized support.
