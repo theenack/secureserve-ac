@@ -227,7 +227,17 @@ if IsDuplicityVersion() then
         return config
     end
 
+    -- The keep-alive client runs in another resource, so its envelope is
+    -- intentionally bound to 'keep-alive' rather than 'SecureServe'.
+    -- Its server-side canary already validates the session token and counter.
+    local canaryEvents = {
+        ["keepalive:hello"] = true,
+        ["keepalive:tick"] = true,
+        ["keepalive:ssMissing"] = true,
+    }
+
     local function isExemptEvent(eventName)
+        if canaryEvents[eventName] then return true end
         if isControlEvent(eventName) or fxEvents[eventName] then return true end
 
         local ok, result = pcall(function()
