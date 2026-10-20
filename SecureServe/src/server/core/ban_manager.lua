@@ -560,7 +560,7 @@ exports("GetSyncBans", function()
             identifiers={license=ids.license, license2=ids.license2, fivem=ids.fivem}
         }
     end
-    return result
+    return json.encode(result)
 end)
 
 return BanManager
