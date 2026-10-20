@@ -934,8 +934,7 @@ on('onServerResourceStart', (resourceName) => {
                     Logger.info(`Installing SecureServe protections...`);
                     installSecureServe();
                 } else {
-                    Logger.info(`Uninstalling SecureServe protections...`);
-                    uninstallSecureServe();
+                    Logger.info('SecureServe module injection is disabled; leaving resource manifests untouched. Use secureuninstall manually if removal is intended.');
                 }
             } catch (e) {
                 Logger.error(`Installer runtime error: ${e.message}`);
