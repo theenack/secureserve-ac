@@ -156,7 +156,23 @@ function readManifestFile(filePath) {
  */
 function writeManifestFile(filePath, content) {
     const resource = findAllResources().find(r => path.join(r.path, r.manifest) === filePath);
-    return resource ? SaveResourceFile(resource.name, resource.manifest, content, -1) === true : false;
+    if (!resource) return false;
+    try {
+        // Respect FiveM's cross-resource filesystem sandbox. Never bypass it with fs.
+        const result = SaveResourceFile(resource.name, resource.manifest, content, -1);
+        if (result !== true && result !== 1) {
+            Logger.warning(`Write denied for ${resource.name}: configure add_filesystem_permission ${CURRENT_RESOURCE_NAME} write ${resource.name} before ensure ${CURRENT_RESOURCE_NAME}.`);
+            return false;
+        }
+        if (LoadResourceFile(resource.name, resource.manifest) !== content) {
+            Logger.warning(`Write verification failed for ${resource.name}.`);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        Logger.error(`Cannot write ${resource.name}: ${error.message}`);
+        return false;
+    }
 }
 
 /**
@@ -886,19 +902,23 @@ on('onServerResourceStart', (resourceName) => {
 
             try {
                 const configPath = path.join(RESOURCES_PATH, 'config.lua');
-                let moduleEnabled = true;
+                let moduleEnabled = false;
                 try {
                     const cfg = fs.readFileSync(configPath, 'utf8');
-                    const match = cfg.match(/SecureServe\s*\.\s*Module\s*=\s*\{[\s\S]*?ModuleEnabled\s*=\s*(true|false)/i);
-                    if (match && match[1]) {
-                        moduleEnabled = match[1].toLowerCase() === 'true';
-                        Logger.info(`ModuleEnabled detected as: ${match[1]}`);
+                    const literal = cfg.match(/ModuleEnabled\\s*=\\s*(true|false)\\b/i);
+                    const entity = cfg.match(/Config\\.EntityModule\\s*=\\s*\\{[\\s\\S]*?\\bEnabled\\s*=\\s*(true|false)\\b/i);
+                    if (literal) {
+                        moduleEnabled = literal[1].toLowerCase() === 'true';
+                    } else if (/ModuleEnabled\\s*=\\s*Config\\.EntityModule\\s+and\\s+Config\\.EntityModule\\.Enabled\\s+or\\s+false/.test(cfg) && entity) {
+                        moduleEnabled = entity[1].toLowerCase() === 'true';
                     } else {
-                        Logger.warning(`Could not find ModuleEnabled setting, defaulting to: ${moduleEnabled}`);
+                        moduleEnabled = false;
+                        Logger.warning('Unable to resolve ModuleEnabled; automatic manifest changes disabled.');
                     }
+                    Logger.info(`ModuleEnabled resolved as: ${moduleEnabled}`);
                 } catch (e) {
                     Logger.error(`Error reading config: ${e.message}`);
-                    moduleEnabled = true;
+                    moduleEnabled = false;
                 }
 
                 if (!fs.existsSync(path.join(RESOURCES_PATH, 'secureserve.key'))) {
