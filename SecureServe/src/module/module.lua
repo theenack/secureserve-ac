@@ -279,13 +279,19 @@ if IsDuplicityVersion() then
         src = tonumber(src)
         if not src or src <= 0 then return end
 
-        local session = {
-            token = newToken(src),
-            seq = 0,
-            issuedAt = os.time(),
-        }
-
-        playerSessions[src] = session
+        -- Multiple token requests can arrive during resource startup. Reuse an
+        -- existing player session rather than resetting the token/sequence while
+        -- legitimate events are still in flight.
+        local session = playerSessions[src]
+        if not session then
+            session = {
+                token = newToken(src),
+                seq = 0,
+                seenSeq = {},
+                issuedAt = os.time(),
+            }
+            playerSessions[src] = session
+        end
         TriggerClientEvent(tokenSyncEvent(), src, session.token, RESOURCE_NAME)
     end
 
@@ -333,11 +339,27 @@ if IsDuplicityVersion() then
             return false, "invalid token"
         end
 
-        if not seq or seq <= session.seq then
-            return false, "replayed token"
+        if not seq or seq < 1 or seq % 1 ~= 0 then
+            return false, "invalid sequence"
         end
 
-        session.seq = seq
+        -- Event delivery may be reordered across FiveM client scripts. Accept
+        -- previously unseen sequence numbers within a bounded replay window,
+        -- but still reject duplicate or stale packets.
+        session.seenSeq = session.seenSeq or {}
+        session.seq = session.seq or 0
+        if seq <= session.seq - 64 or session.seenSeq[seq] then
+            return false, "replayed token"
+        end
+        session.seenSeq[seq] = true
+        if seq > session.seq then
+            session.seq = seq
+            for oldSeq in pairs(session.seenSeq) do
+                if oldSeq <= seq - 64 then
+                    session.seenSeq[oldSeq] = nil
+                end
+            end
+        end
         return true
     end
 
@@ -488,8 +510,11 @@ else
         if resourceName and resourceName ~= RESOURCE_NAME then return end
         if type(token) ~= "string" or token == "" then return end
 
-        eventToken = token
-        eventSeq = 0
+        -- Duplicate sync messages must not rewind the client's sequence.
+        if eventToken ~= token then
+            eventToken = token
+            eventSeq = 0
+        end
     end)
 
     Citizen.CreateThread(function()
