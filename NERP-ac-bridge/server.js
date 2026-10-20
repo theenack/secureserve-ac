@@ -14,6 +14,8 @@ let lastScan = 'never';
 let lastScanCounts = {total: 0, eligible: 0, skipped: 0};
 let acceptedBans = 0;
 let lastWarnAt = 0;
+let pollBlockedUntil = 0;
+let lastPollError = '';
 const activeCommands = new Set();
 // Never transmit player IPs, hardware tokens, or the full SecureServe ban file.
 const MAX_QUEUE = 10000;
@@ -78,8 +80,23 @@ function pump() {
         inFlight = false;
         // Yield to the event loop rather than recurse through queued messages.
         setTimeout(pump, 0);
+      } else if (item.data.type === 'command_poll' && status >= 400 && status < 500) {
+        // A 4xx poll cannot succeed by replaying the exact same request.
+        // Drop this optional poll so bans and session telemetry can continue.
+        lastPollError = String(status) + ': ' + String(response || '').slice(0, 200);
+        pollBlockedUntil = Date.now() + 5 * 60 * 1000;
+        lastHttp = String(status) + ' DISABLED POLL (command_poll)';
+        console.warn('[NERP-AC] command polling rejected by website:', lastPollError,
+          '- pausing polls for 5 minutes; verify current anticheat-ingest.php is deployed');
+        queue.shift();
+        inFlight = false;
+        setTimeout(pump, 0);
       } else if (retry < 4) {
         lastHttp = String(status) + ' RETRY (' + item.data.type + ')';
+        if (retry === 0) {
+          console.warn('[NERP-AC] HTTP retry:', status, 'event:', item.data.type,
+            'response:', String(response || '').slice(0, 200));
+        }
         setTimeout(() => send(retry + 1), Math.min(60000, 2000 * (2 ** retry)));
       } else {
         lastHttp = String(status) + ' FAILED (' + item.data.type + ')';
@@ -204,6 +221,7 @@ on('NERP-AC:RemoteUnbanResult', (commandId, success, message) => {
 });
 setInterval(() => {
   if (endpoint.startsWith('https://') && secret.length >= 32 &&
+      Date.now() >= pollBlockedUntil &&
       !queue.some(item => item.data.type === 'command_poll')) {
     enqueue('command_poll', 'system:commands');
   }
@@ -247,7 +265,8 @@ RegisterCommand('nerpacstatus', (src) => {
     configured: endpoint.startsWith('https://') && secret.length >= 32,
     endpointHost: (() => { try { return new URL(endpoint).host; } catch (_) { return 'invalid'; } })(),
     server: safeServerId, lastScan, lastScanCounts, pending: queue.length,
-    inFlight, acceptedBans, lastHttp
+    inFlight, acceptedBans, lastHttp, lastPollError,
+    pollPausedSeconds: Math.max(0, Math.ceil((pollBlockedUntil - Date.now()) / 1000))
   }));
 }, true);
 RegisterCommand('nerpacsync', (src) => {
