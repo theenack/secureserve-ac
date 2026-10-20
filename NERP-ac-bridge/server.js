@@ -35,7 +35,7 @@ function playerKey(src) {
   }
   return '';
 }
-function emit(type, player_key, extra = {}) {
+function queueTelemetry(type, player_key, extra = {}) {
   if (!endpoint.startsWith('https://') || secret.length < 32 || !player_key) return;
   enqueue(type, player_key, extra);
 }
@@ -215,19 +215,19 @@ on('playerJoining', () => {
   if (key) {
     const session = crypto.randomBytes(16).toString('hex');
     sessions.set(String(src), {key, session});
-    emit('player_seen', key, {name: GetPlayerName(String(src)) || 'Unknown'});
-    emit('session_start', key, {session_key:session});
+    queueTelemetry('player_seen', key, {name: GetPlayerName(String(src)) || 'Unknown'});
+    queueTelemetry('session_start', key, {session_key:session});
   }
 });
 on('playerDropped', () => {
   const src = String(global.source);
   const state = sessions.get(src);
-  if (state) emit('session_end', state.key, {session_key:state.session});
+  if (state) queueTelemetry('session_end', state.key, {session_key:state.session});
   sessions.delete(src);
 });
 on('playerBanned', (src, reason) => {
   const key = playerKey(src);
-  if (key) emit('detection', key, {detection_type: String(reason || 'SecureServe ban').slice(0,128)});
+  if (key) queueTelemetry('detection', key, {detection_type: String(reason || 'SecureServe ban').slice(0,128)});
 });
 setTimeout(() => {
   for (const src of GetPlayers()) {
