@@ -235,8 +235,8 @@ setTimeout(() => {
     if (key) {
       const session = crypto.randomBytes(16).toString('hex');
       sessions.set(String(src), {key, session});
-      emit('player_seen', key, {name:GetPlayerName(src) || 'Unknown'});
-      emit('session_start', key, {session_key:session});
+      queueTelemetry('player_seen', key, {name:GetPlayerName(src) || 'Unknown'});
+      queueTelemetry('session_start', key, {session_key:session});
     }
   }
 }, 5000);
