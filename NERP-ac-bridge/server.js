@@ -65,11 +65,12 @@ function pump() {
   send(0);
 }
 function enqueue(type, key, extra = {}) {
-  if (!endpoint.startsWith('https://') || secret.length < 32) return;
-  if (queue.length >= MAX_QUEUE) return;
+  if (!endpoint.startsWith('https://') || secret.length < 32) return false;
+  if (queue.length >= MAX_QUEUE) return false;
   queue.push({eventId: crypto.randomBytes(16).toString('hex'),
     data: {type, player_key: key, server_id: safeServerId, ...extra}});
   pump();
+  return true;
 }
 function stablePlayerKey(ids) {
   if (!ids || typeof ids !== 'object') return '';
@@ -105,15 +106,14 @@ function syncBans() {
       };
       const hash = crypto.createHash('sha256').update(JSON.stringify([key, data])).digest('hex');
       if (knownBans.get(banId) !== hash) {
-        enqueue('ban_upsert', key, data);
-        knownBans.set(banId, hash);
+        if (enqueue('ban_upsert', key, data)) knownBans.set(banId, hash);
       }
     }
     // Periodic authoritative inventory reconciles unbans even if the bridge
     // was offline when they happened. Empty list is valid only after JSON parse.
     // The API requires a player_key even for inventory; use a fixed system key.
     // A cap avoids oversized payloads; skip reconciliation rather than truncate.
-    if (currentIds.length <= 1000) {
+    if (currentIds.length <= 1000 && queue.length < MAX_QUEUE) {
       enqueue('ban_inventory', 'system:inventory', {ban_ids: currentIds});
     } else {
       console.warn('[NERP-AC] ban inventory exceeds 1000 IDs; skipping reconciliation');
