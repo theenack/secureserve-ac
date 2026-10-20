@@ -170,7 +170,19 @@ local function handle_tick(src, token, counter)
     local now = seconds()
 
     if type(token) ~= "string" or not is_valid_counter(counter) then
-        punish(src, "Malformed canary tick")
+        -- An injected event wrapper (or an out-of-date client) can change the
+        -- argument shape. A malformed tick alone is not evidence of cheating.
+        -- Reject it without updating heartbeat freshness; established silence
+        -- checks still detect a client that never sends valid heartbeats.
+        local session = Canary.sessions[src]
+        if session then
+            session.malformed_at = session.malformed_at or 0
+            if now - session.malformed_at >= 15 then
+                logger.warn(("Ignoring malformed canary tick from %s (token type: %s, counter type: %s)")
+                    :format(tostring(src), type(token), type(counter)))
+                session.malformed_at = now
+            end
+        end
         return
     end
 
