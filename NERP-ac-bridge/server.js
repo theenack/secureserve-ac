@@ -16,6 +16,9 @@ let acceptedBans = 0;
 let lastWarnAt = 0;
 let pollBlockedUntil = 0;
 let lastPollError = '';
+let lastInventoryHash = '';
+let lastInventorySuccessAt = 0;
+const INVENTORY_REFRESH_MS = 5 * 60 * 1000;
 const activeCommands = new Set();
 // Never transmit player IPs, hardware tokens, or the full SecureServe ban file.
 const MAX_QUEUE = 10000;
@@ -76,6 +79,10 @@ function pump() {
         }
         lastHttp = String(status) + ' OK (' + item.data.type + ')';
         if (item.data.type === 'ban_upsert') acceptedBans++;
+        if (item.data.type === 'ban_inventory') {
+          lastInventoryHash = crypto.createHash('sha256').update(JSON.stringify(item.data.ban_ids)).digest('hex');
+          lastInventorySuccessAt = Date.now();
+        }
         queue.shift();
         inFlight = false;
         // Yield to the event loop rather than recurse through queued messages.
@@ -192,11 +199,15 @@ function syncBans() {
     // was offline when they happened. Empty list is valid only after JSON parse.
     // The API requires a player_key even for inventory; use a fixed system key.
     // A cap avoids oversized payloads; skip reconciliation rather than truncate.
+    const inventoryHash = crypto.createHash('sha256').update(JSON.stringify(currentIds)).digest('hex');
+    const inventoryChanged = inventoryHash !== lastInventoryHash;
+    const inventoryDue = Date.now() - lastInventorySuccessAt >= INVENTORY_REFRESH_MS;
     if (currentIds.length > 1000) {
       console.warn('[NERP-AC] ban inventory exceeds 1000 IDs; skipping reconciliation');
     } else if (queue.length >= MAX_QUEUE) {
       console.warn('[NERP-AC] telemetry queue full; ban inventory deferred');
-    } else if (!queue.some(item => item.data.type === 'ban_inventory')) {
+    } else if ((inventoryChanged || inventoryDue) &&
+               !queue.some(item => item.data.type === 'ban_inventory')) {
       enqueue('ban_inventory', 'system:inventory', {ban_ids: currentIds});
     }
     for (const id of Array.from(knownBans.keys())) {
@@ -266,6 +277,7 @@ RegisterCommand('nerpacstatus', (src) => {
     endpointHost: (() => { try { return new URL(endpoint).host; } catch (_) { return 'invalid'; } })(),
     server: safeServerId, lastScan, lastScanCounts, pending: queue.length,
     inFlight, acceptedBans, lastHttp, lastPollError,
+    lastInventorySuccess: lastInventorySuccessAt ? new Date(lastInventorySuccessAt).toISOString() : 'never',
     pollPausedSeconds: Math.max(0, Math.ceil((pollBlockedUntil - Date.now()) / 1000))
   }));
 }, true);
