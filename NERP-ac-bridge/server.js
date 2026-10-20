@@ -12,10 +12,10 @@ function emit(type, player_key, extra = {}) {
 }
 function deliver(item, attempt = 0) {
   const body = JSON.stringify(item);
-  const timestamp = String(Math.floor(Date.now()/1000));
-  const signature = crypto.createHmac('sha256', secret).update(timestamp+'.'+body).digest('hex');
   const eventId = crypto.randomBytes(16).toString('hex');
   function send(retry) {
+    const timestamp = String(Math.floor(Date.now()/1000));
+    const signature = crypto.createHmac('sha256', secret).update(timestamp+'.'+body).digest('hex');
     PerformHttpRequest(endpoint, (_status, _body) => {
       if (_status >= 200 && _status < 300) return;
       if (retry < 4) setTimeout(() => send(retry + 1), Math.min(60000, 2000 * (2 ** retry)));
