@@ -65,6 +65,7 @@ client_scripts {
 }
 
 server_scripts {
+    "@oxmysql/lib/MySQL.lua",
     "src/server/core/version.lua",
     "config.lua",
     "src/server/main.lua",
@@ -94,6 +95,7 @@ server_scripts {
 dependencies {
     "/server:5181",
     "screenshot-basic",
+    "oxmysql",
     "keep-alive",
 }
 
