@@ -8,6 +8,11 @@ const serverId = GetConvar('nerp_ac_server', 'dev').trim().toLowerCase();
 const knownBans = new Map();
 let syncing = false;
 let inFlight = false;
+let lastHttp = 'not sent';
+let lastScan = 'never';
+let lastScanCounts = {total: 0, eligible: 0, skipped: 0};
+let acceptedBans = 0;
+let lastWarnAt = 0;
 // Never transmit player IPs, hardware tokens, or the full SecureServe ban file.
 const MAX_QUEUE = 10000;
 const safeServerId = /^[a-z0-9_-]{1,32}$/.test(serverId) ? serverId : 'dev';
@@ -44,13 +49,16 @@ function pump() {
     const signature = crypto.createHmac('sha256', secret).update(timestamp + '.' + body).digest('hex');
     PerformHttpRequest(endpoint, (status, response) => {
       if (status >= 200 && status < 300) {
+        lastHttp = String(status) + ' OK (' + item.data.type + ')';
+        if (item.data.type === 'ban_upsert') acceptedBans++;
         queue.shift();
         inFlight = false;
         pump();
       } else if (retry < 4) {
         setTimeout(() => send(retry + 1), Math.min(60000, 2000 * (2 ** retry)));
       } else {
-        console.warn('[NERP-AC] delivery failed:', status, String(response || '').slice(0, 100));
+        lastHttp = String(status) + ' FAILED (' + item.data.type + ')';
+        console.warn('[NERP-AC] delivery failed:', status, 'event:', item.data.type, 'response:', String(response || '').slice(0, 180));
         // Retain the unsent event and retry later. Do not lose ban revocations.
         inFlight = false;
         setTimeout(pump, 30000);
@@ -81,7 +89,14 @@ function stablePlayerKey(ids) {
   return '';
 }
 function syncBans() {
-  if (syncing || !endpoint.startsWith('https://') || secret.length < 32) return;
+  if (syncing) return;
+  if (!endpoint.startsWith('https://') || secret.length < 32) {
+    if (Date.now() - lastWarnAt > 60000) {
+      console.warn('[NERP-AC] ban sync not configured: HTTPS URL set:', endpoint.startsWith('https://'), 'secret length valid:', secret.length >= 32);
+      lastWarnAt = Date.now();
+    }
+    return;
+  }
   syncing = true;
   try {
     const raw = LoadResourceFile('SecureServe', 'bans.json');
@@ -92,11 +107,12 @@ function syncBans() {
     const bans = JSON.parse(raw);
     if (!Array.isArray(bans)) throw new Error('bans.json is not an array');
     const currentIds = [];
+    let skipped = 0;
     for (const ban of bans) {
-      if (!ban || typeof ban !== 'object') continue;
+      if (!ban || typeof ban !== 'object') { skipped++; continue; }
       const banId = String(ban.id || '');
       const key = stablePlayerKey(ban.identifiers);
-      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(banId) || !key) continue;
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(banId) || !key) { skipped++; continue; }
       currentIds.push(banId);
       const data = {
         ban_id: banId, name: String(ban.player_name || 'Unknown').slice(0, 128),
@@ -109,6 +125,9 @@ function syncBans() {
         if (enqueue('ban_upsert', key, data)) knownBans.set(banId, hash);
       }
     }
+    lastScan = new Date().toISOString();
+    lastScanCounts = {total: bans.length, eligible: currentIds.length, skipped};
+    console.log('[NERP-AC] ban scan:', JSON.stringify(lastScanCounts), 'server:', safeServerId, 'pending:', queue.length, 'last HTTP:', lastHttp);
     // Periodic authoritative inventory reconciles unbans even if the bridge
     // was offline when they happened. Empty list is valid only after JSON parse.
     // The API requires a player_key even for inventory; use a fixed system key.
@@ -160,4 +179,18 @@ setTimeout(() => {
     }
   }
 }, 5000);
-console.log('[NERP-AC] telemetry bridge loaded; configured:', endpoint.startsWith('https://') && secret.length >= 32);
+RegisterCommand('nerpacstatus', (src) => {
+  if (Number(src) !== 0) return;
+  console.log('[NERP-AC] status', JSON.stringify({
+    configured: endpoint.startsWith('https://') && secret.length >= 32,
+    endpointHost: (() => { try { return new URL(endpoint).host; } catch (_) { return 'invalid'; } })(),
+    server: safeServerId, lastScan, lastScanCounts, pending: queue.length,
+    inFlight, acceptedBans, lastHttp
+  }));
+}, true);
+RegisterCommand('nerpacsync', (src) => {
+  if (Number(src) !== 0) return;
+  console.log('[NERP-AC] manual ban sync requested');
+  syncBans();
+}, true);
+console.log('[NERP-AC] telemetry bridge loaded; configured:', endpoint.startsWith('https://') && secret.length >= 32, 'server:', safeServerId);
