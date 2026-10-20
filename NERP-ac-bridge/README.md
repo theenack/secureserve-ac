@@ -1,6 +1,6 @@
 # NERP SecureServe telemetry bridge
 
-This optional server-only resource forwards player join records and SecureServe `playerBanned` notifications to the NERP staff website. It does **not** perform ban synchronization or remote unbans.
+This server-only resource forwards player events and synchronizes SecureServe bans from `SecureServe/bans.json` to the NERP staff website. The website is read-only; remote unbans are not supported.
 
 ## Installation
 
@@ -12,6 +12,7 @@ This optional server-only resource forwards player join records and SecureServe 
 ```cfg
 set nerp_ac_url "https://YOUR-STAGING-HOST/api/anticheat-ingest.php"
 set nerp_ac_secret "YOUR_UNIQUE_32_PLUS_CHARACTER_SECRET"
+set nerp_ac_server "dev" # use "production" on the production server
 ensure SecureServe
 ensure NERP-ac-bridge
 ```
@@ -20,12 +21,23 @@ ensure NERP-ac-bridge
 6. Visit `/anticheat.php` as an authorized staff member and confirm that join records appear.
 7. Test that invalid signatures and duplicate event IDs do not create records.
 
+## Ban synchronization
+
+- Pull the latest `main` of both `theenack/secureserve-ac` and `theenack/nerpweb`.
+- Deploy the website changes, configure `anticheat.ingest_secret` on the website and the matching `nerp_ac_secret` convar on each FiveM server.
+- Configure `nerp_ac_url` to `https://newenergyrp.com/api/anticheat-ingest.php`.
+- Give each server a **unique** `nerp_ac_server` (e.g. `dev` or `production`). Do not use the default `dev` on production.
+- Start `SecureServe` before `NERP-ac-bridge`. The bridge reads `bans.json` after 10 seconds and approximately every minute. The web API upserts bans by `(source_server, external_ban_id)` and reconciles removed bans by server.
+- The first accepted sync imports existing bans with a valid license / FiveM ID; no unban or enforcement command is ever sent from the website.
+- Check `https://newenergyrp.com/anticheat.php` with an authorized staff account. Both active and revoked/expired history should appear.
+- If records do not appear, check `[NERP-AC] delivery failed` or `ban sync failed` console logs, the website PHP error log, matching secrets, and HTTPS connectivity.
+
 ## Limitations and required work
 
 - This bridge is untested in a running FiveM server; validate JavaScript server runtime and event source semantics in staging.
 - The `playerBanned` event contains limited metadata and does not establish a full historical ban record.
 - SecureServe persists active bans in `SecureServe/bans.json`; importing historical bans, identifier matching, and unban acknowledgements still require implementation.
-- The current telemetry endpoint accepts player and detection records only. Do not assume that bans or unbans synchronize.
+- The updated endpoint accepts ban upserts and authoritative ban inventories. The bridge reads on-disk ban state; synchronization is eventually consistent and needs server/Web deployment before it works.
 - No replay-resistant command channel exists for website-to-server moderation yet; do not enable remote unban buttons.
 - Do not send player IP addresses or hardware tokens to the website.
 - SecureServe is AGPL-3.0; retain its license and comply with applicable source-sharing obligations.
