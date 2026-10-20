@@ -5,7 +5,21 @@ const secret = GetConvar('nerp_ac_secret', '');
 const queue = [];
 const sessions = new Map();
 function playerKey(src) {
-  return GetPlayerIdentifiers(String(src)).find(x => x.startsWith('license:')) || '';
+  // FiveM's JavaScript runtime does not expose Lua's GetPlayerIdentifiers helper.
+  const player = String(src);
+  if (!player || player === 'undefined' || player === 'null') return '';
+  if (typeof GetPlayerIdentifierByType === 'function') {
+    const license = GetPlayerIdentifierByType(player, 'license');
+    if (typeof license === 'string' && license.startsWith('license:')) return license;
+  }
+  if (typeof GetNumPlayerIdentifiers === 'function' && typeof GetPlayerIdentifier === 'function') {
+    const count = GetNumPlayerIdentifiers(player);
+    for (let i = 0; i < count; i++) {
+      const identifier = GetPlayerIdentifier(player, i);
+      if (typeof identifier === 'string' && identifier.startsWith('license:')) return identifier;
+    }
+  }
+  return '';
 }
 function emit(type, player_key, extra = {}) {
   if (!endpoint.startsWith('https://') || secret.length < 32 || !player_key) return;
@@ -55,9 +69,7 @@ on('playerBanned', (src, reason) => {
   if (key) emit('detection', key, {detection_type: String(reason || 'SecureServe ban').slice(0,128)});
 });
 setTimeout(() => {
-  for (let i = 0; i < GetNumPlayerIndices(); i++) {
-    const src = GetPlayerFromIndex(i);
-    if (src === null || src === undefined) continue;
+  for (const src of GetPlayers()) {
     const key = playerKey(src);
     if (key) {
       const session = crypto.randomBytes(16).toString('hex');
