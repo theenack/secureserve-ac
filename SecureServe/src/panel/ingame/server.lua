@@ -102,8 +102,13 @@ end
 local function mapBan(ban)
     local ids = ban.identifiers or {}
     local expires = tonumber(ban.expires or 0) or 0
+    local revoked = ban.revoked_at ~= nil and ban.revoked_at ~= false
+    local expired = expires > 0 and os.time() >= expires
+    local status = revoked and "Revoked" or (expired and "Expired" or "Active")
 
     return {
+        status  = status,
+        revoked_at = ban.revoked_at,
         id      = tostring(ban.id or ""),
         name    = ban.player_name or "Unknown",
         reason  = ban.reason or ban.detection or "",
