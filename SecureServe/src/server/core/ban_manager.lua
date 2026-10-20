@@ -30,21 +30,23 @@ function BanManager.initialize()
     BanManager.load_bans()
     -- The bridge can request a narrowly-scoped unban by SecureServe ban ID.
     -- Server-only event: never RegisterNetEvent (clients cannot invoke it).
-    AddEventHandler("NERP-AC:RemoteUnban", function(banId, callback)
+    AddEventHandler("NERP-AC:RemoteUnban", function(commandId, banId)
         if GetInvokingResource() ~= "NERP-ac-bridge" then return end
-        if type(callback) ~= "function" then return end
-        if type(banId) ~= "string" or not banId:match("^[%w_-]+$") or #banId > 64 then
-            callback(false, "invalid ban ID")
-            return
-        end
-        -- MySQL.scalar returns nil for NULL and missing rows: check existence.
-        local rows = MySQL.query.await("SELECT id,revoked_at FROM nerp_ac_bans WHERE id=? LIMIT 1", {banId})
-        if not rows or not rows[1] then callback(false, "ban not found"); return end
-        if rows[1].revoked_at then callback(true, "already revoked"); return end
-        local ok = BanManager.unban_player(banId)
-        callback(ok == true, ok and "revoked" or "failed")
+        if type(commandId) ~= "number" or type(banId) ~= "string" or
+           not banId:match("^[%w_-]+$") or #banId > 64 then return end
+        local ok, result, message = pcall(function()
+            local rows = MySQL.query.await("SELECT id,revoked_at FROM nerp_ac_bans WHERE id=? LIMIT 1", {banId})
+            if not rows or not rows[1] then return false, "ban not found" end
+            if rows[1].revoked_at then return true, "already revoked" end
+            local success = BanManager.unban_player(banId)
+            return success == true, success and "revoked" or "could not revoke"
+        end)
+        TriggerEvent("NERP-AC:RemoteUnbanResult", commandId,
+            ok and result == true, ok and message or tostring(result))
     end)
 
+    local maxId = MySQL.scalar.await("SELECT MAX(CAST(id AS UNSIGNED)) FROM nerp_ac_bans") or 0
+    BanManager.next_ban_id = math.max(BanManager.next_ban_id, tonumber(maxId) + 1)
     for _, ban in ipairs(BanManager.bans) do
         local n = tonumber(ban.id)
         if n and n >= BanManager.next_ban_id then
@@ -546,5 +548,19 @@ function BanManager.get_recent_bans(count)
     end
     return result
 end
+
+-- Read-only export for the server-only telemetry bridge. Do not expose tokens/IPs.
+exports("GetSyncBans", function()
+    local result = {}
+    for _, b in ipairs(BanManager.bans) do
+        local ids = b.identifiers or {}
+        result[#result+1] = {
+            id=b.id, player_name=b.player_name, reason=b.reason,
+            timestamp=b.timestamp, expires=b.expires,
+            identifiers={license=ids.license, license2=ids.license2, fivem=ids.fivem}
+        }
+    end
+    return result
+end)
 
 return BanManager
