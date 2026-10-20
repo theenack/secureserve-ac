@@ -129,13 +129,8 @@ function syncBans() {
   }
   syncing = true;
   try {
-    const raw = LoadResourceFile('SecureServe', 'bans.json');
-    if (typeof raw !== 'string' || !raw.trim()) {
-      console.warn('[NERP-AC] bans.json unavailable; not clearing remote bans');
-      return;
-    }
-    const bans = JSON.parse(raw);
-    if (!Array.isArray(bans)) throw new Error('bans.json is not an array');
+    const bans = exports['SecureServe'].GetSyncBans();
+    if (!Array.isArray(bans)) throw new Error('SecureServe SQL snapshot unavailable');
     const currentIds = [];
     let skipped = 0;
     for (const ban of bans) {
