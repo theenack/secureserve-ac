@@ -14,6 +14,7 @@ let lastScan = 'never';
 let lastScanCounts = {total: 0, eligible: 0, skipped: 0};
 let acceptedBans = 0;
 let lastWarnAt = 0;
+const activeCommands = new Set();
 // Never transmit player IPs, hardware tokens, or the full SecureServe ban file.
 const MAX_QUEUE = 10000;
 const safeServerId = /^[a-z0-9_-]{1,32}$/.test(serverId) ? serverId : 'dev';
@@ -55,6 +56,22 @@ function pump() {
       settled = true;
       clearTimeout(watchdog);
       if (status >= 200 && status < 300) {
+        if (item.data.type === 'command_poll') {
+          try {
+            const decoded = JSON.parse(response || '{}');
+            const cmd = decoded.command;
+            if (cmd && cmd.action === 'unban' && Number.isSafeInteger(cmd.id) &&
+                typeof cmd.ban_id === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(cmd.ban_id) &&
+                !activeCommands.has(cmd.id)) {
+              activeCommands.add(cmd.id);
+              console.log('[NERP-AC] processing website unban command', cmd.id, 'server:', safeServerId);
+              emit('NERP-AC:RemoteUnban', cmd.id, cmd.ban_id);
+              setTimeout(() => activeCommands.delete(cmd.id), 45000);
+            }
+          } catch (error) {
+            console.warn('[NERP-AC] invalid command poll response:', error.message);
+          }
+        }
         lastHttp = String(status) + ' OK (' + item.data.type + ')';
         if (item.data.type === 'ban_upsert') acceptedBans++;
         queue.shift();
@@ -173,6 +190,23 @@ function syncBans() {
     syncing = false;
   }
 }
+// Acknowledgement comes from the authoritative Lua ban manager after the SQL
+// revoke has completed. No website status is marked successful before then.
+on('NERP-AC:RemoteUnbanResult', (commandId, success, message) => {
+  if (!Number.isSafeInteger(commandId) || !activeCommands.has(commandId)) return;
+  activeCommands.delete(commandId);
+  enqueue('command_ack', 'system:commands', {
+    command_id: commandId, success: success === true,
+    message: String(message || '').slice(0, 255)
+  });
+  syncBans();
+});
+setInterval(() => {
+  if (endpoint.startsWith('https://') && secret.length >= 32 &&
+      !queue.some(item => item.data.type === 'command_poll')) {
+    enqueue('command_poll', 'system:commands');
+  }
+}, 10000);
 setInterval(syncBans, 60000);
 setTimeout(syncBans, 10000);
 on('playerJoining', () => {
