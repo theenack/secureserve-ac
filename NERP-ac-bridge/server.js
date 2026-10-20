@@ -47,28 +47,41 @@ function pump() {
   function send(retry) {
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = crypto.createHmac('sha256', secret).update(timestamp + '.' + body).digest('hex');
-    PerformHttpRequest(endpoint, (status, response) => {
+    let settled = false;
+    const watchdog = setTimeout(() => finish(0, 'HTTP timeout (20 seconds)'), 20000);
+    function finish(status, response) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
       if (status >= 200 && status < 300) {
         lastHttp = String(status) + ' OK (' + item.data.type + ')';
         if (item.data.type === 'ban_upsert') acceptedBans++;
         queue.shift();
         inFlight = false;
-        pump();
+        // Yield to the event loop rather than recurse through queued messages.
+        setTimeout(pump, 0);
       } else if (retry < 4) {
+        lastHttp = String(status) + ' RETRY (' + item.data.type + ')';
         setTimeout(() => send(retry + 1), Math.min(60000, 2000 * (2 ** retry)));
       } else {
         lastHttp = String(status) + ' FAILED (' + item.data.type + ')';
-        console.warn('[NERP-AC] delivery failed:', status, 'event:', item.data.type, 'response:', String(response || '').slice(0, 180));
-        // Retain the unsent event and retry later. Do not lose ban revocations.
+        console.warn('[NERP-AC] delivery failed:', status, 'event:', item.data.type,
+          'response:', String(response || '').slice(0, 180));
+        // Keep unsent event, including its idempotency ID, at the queue head.
         inFlight = false;
         setTimeout(pump, 30000);
       }
-    }, 'POST', body, {
-      'Content-Type': 'application/json',
-      'X-AC-Timestamp': timestamp,
-      'X-AC-Signature': signature,
-      'X-AC-Event-ID': item.eventId
-    });
+    }
+    try {
+      PerformHttpRequest(endpoint, (status, response) => finish(status, response), 'POST', body, {
+        'Content-Type': 'application/json',
+        'X-AC-Timestamp': timestamp,
+        'X-AC-Signature': signature,
+        'X-AC-Event-ID': item.eventId
+      });
+    } catch (error) {
+      finish(0, String(error && error.message || error));
+    }
   }
   send(0);
 }
@@ -132,7 +145,7 @@ function syncBans() {
     // was offline when they happened. Empty list is valid only after JSON parse.
     // The API requires a player_key even for inventory; use a fixed system key.
     // A cap avoids oversized payloads; skip reconciliation rather than truncate.
-    if (currentIds.length <= 1000 && queue.length < MAX_QUEUE) {
+    if (currentIds.length <= 1000 && queue.length < MAX_QUEUE && !queue.some(item => item.data.type === 'ban_inventory')) {
       enqueue('ban_inventory', 'system:inventory', {ban_ids: currentIds});
     } else {
       console.warn('[NERP-AC] ban inventory exceeds 1000 IDs; skipping reconciliation');
