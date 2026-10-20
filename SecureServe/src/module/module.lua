@@ -367,6 +367,18 @@ if IsDuplicityVersion() then
         end
     end
 
+    -- Exempt events are still transmitted through the encrypted event name by
+    -- resources with the SecureServe client module injected. Those messages
+    -- carry an envelope first; never pass it to legacy event callbacks.
+    -- Preserve ordinary raw event arguments for callers without the module.
+    local function exemptEncryptedHandler(handler)
+        return function(...)
+            local packed = table.pack(...)
+            local firstArg = isTokenEnvelope(packed[1]) and 2 or 1
+            return handler(table.unpack(packed, firstArg, packed.n))
+        end
+    end
+
     local function localOnlyHandler(handler)
         return function(...)
             if isPlayerSource(source) then return end
@@ -434,7 +446,7 @@ if IsDuplicityVersion() then
             originalRegisterNetEvent(eventName)
             if type(callback) == "function" then
                 originalAddEventHandler(eventName, callback)
-                return originalAddEventHandler(encryptedEventName, callback)
+                return originalAddEventHandler(encryptedEventName, exemptEncryptedHandler(callback))
             end
             return
         end
@@ -457,7 +469,7 @@ if IsDuplicityVersion() then
         end
 
         if isExemptEvent(eventName) then
-            originalAddEventHandler(encryptedEventName, handler, ...)
+            originalAddEventHandler(encryptedEventName, exemptEncryptedHandler(handler), ...)
             return originalAddEventHandler(eventName, handler, ...)
         end
 
