@@ -146,7 +146,8 @@ function syncBans() {
   }
   syncing = true;
   try {
-    const bans = exports['SecureServe'].GetSyncBans();
+    const snapshot = exports['SecureServe'].GetSyncBans();
+    const bans = JSON.parse(snapshot);
     if (!Array.isArray(bans)) throw new Error('SecureServe SQL snapshot unavailable');
     const currentIds = [];
     let skipped = 0;
