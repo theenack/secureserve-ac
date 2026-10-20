@@ -203,7 +203,7 @@ local function sql_upsert(ban)
         tostring(ban.id), tostring(ban.player_name or "Unknown"), tostring(ban.reason or ""),
         json.encode(ban.identifiers or {}), tonumber(ban.timestamp) or 0,
         tonumber(ban.expires) or 0, tostring(ban.admin or "System"),
-        tostring(ban.detection or ""), ban.screenshot,
+        tostring(ban.detection or ""), tostring(ban.screenshot or ""),
     })
 end
 
