@@ -2,12 +2,12 @@ Config = Config or {}
 
 
 -- //[Main Config]\\ --
-Config.ServerName = "name of the server"
-Config.DiscordInvite = "https://discord.gg/"
+Config.ServerName = "NewEnergyRP"
+Config.DiscordInvite = "https://discord.gg/newenergyrp"
 Config.AppealURL = "https://discord.gg/"
 Config.RequireSteam = false
 Config.IdentifierCheck = true
-Config.Debug = false
+Config.Debug = true
 Config.MinimumOnlineSecondsBeforeBan = 55
 
 
@@ -225,6 +225,8 @@ Config.SafeResources = {
     "bob74_ipl",
     "ox_inventory",
     "codem-garaje",
+    "rpemotes",
+    "enack-propsystem",
 }
 
 
@@ -474,19 +476,19 @@ Config.Webhooks = {
     Enabled    = true,
 
     -- Main categories
-    System     = "https://discord.com/api/webhooks/",   -- System start/stop
-    Detection  = "https://discord.com/api/webhooks/",   -- Cheat detections
-    Ban        = "https://discord.com/api/webhooks/",   -- Bans
-    Kick       = "https://discord.com/api/webhooks/",   -- Kicks
-    Screenshot = "https://discord.com/api/webhooks/",   -- Screenshots
-    Admin      = "https://discord.com/api/webhooks/",   -- Admin actions
-    Debug      = "https://discord.com/api/webhooks/",
+    System     = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",   -- System start/stop
+    Detection  = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",   -- Cheat detections
+    Ban        = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",   -- Bans
+    Kick       = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",   -- Kicks
+    Screenshot = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",   -- Screenshots
+    Admin      = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",   -- Admin actions
+    Debug      = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
 
     -- Server events
-    Join       = "https://discord.com/api/webhooks/",
-    Leave      = "https://discord.com/api/webhooks/",
-    Kill       = "https://discord.com/api/webhooks/",
-    Resource   = "https://discord.com/api/webhooks/",
+    Join       = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
+    Leave      = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
+    Kill       = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
+    Resource   = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
 
     -- Webhooks by blacklist category (used if individual webhooks are empty)
     Simple                = "",
