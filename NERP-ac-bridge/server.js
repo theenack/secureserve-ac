@@ -1,5 +1,6 @@
 'use strict';
 const crypto = require('crypto');
+const https = require('https');
 const endpoint = GetConvar('nerp_ac_url', '');
 const secret = GetConvar('nerp_ac_secret', '');
 const queue = [];
@@ -73,12 +74,28 @@ function pump() {
       }
     }
     try {
-      PerformHttpRequest(endpoint, (status, response) => finish(status, response), 'POST', body, {
-        'Content-Type': 'application/json',
-        'X-AC-Timestamp': timestamp,
-        'X-AC-Signature': signature,
-        'X-AC-Event-ID': item.eventId
+      // FiveM's JS runtime does not expose the Lua PerformHttpRequest API.
+      // Use the built-in Node.js HTTPS client instead.
+      const req = https.request(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          'X-AC-Timestamp': timestamp,
+          'X-AC-Signature': signature,
+          'X-AC-Event-ID': item.eventId
+        },
+        timeout: 20000
+      }, (res) => {
+        let response = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { if (response.length < 1024) response += chunk.slice(0, 1024); });
+        res.on('end', () => finish(res.statusCode || 0, response));
+        res.on('error', (error) => finish(0, error.message));
       });
+      req.on('timeout', () => req.destroy(new Error('HTTPS request timed out')));
+      req.on('error', (error) => finish(0, error.message));
+      req.end(body);
     } catch (error) {
       finish(0, String(error && error.message || error));
     }
@@ -145,10 +162,12 @@ function syncBans() {
     // was offline when they happened. Empty list is valid only after JSON parse.
     // The API requires a player_key even for inventory; use a fixed system key.
     // A cap avoids oversized payloads; skip reconciliation rather than truncate.
-    if (currentIds.length <= 1000 && queue.length < MAX_QUEUE && !queue.some(item => item.data.type === 'ban_inventory')) {
-      enqueue('ban_inventory', 'system:inventory', {ban_ids: currentIds});
-    } else {
+    if (currentIds.length > 1000) {
       console.warn('[NERP-AC] ban inventory exceeds 1000 IDs; skipping reconciliation');
+    } else if (queue.length >= MAX_QUEUE) {
+      console.warn('[NERP-AC] telemetry queue full; ban inventory deferred');
+    } else if (!queue.some(item => item.data.type === 'ban_inventory')) {
+      enqueue('ban_inventory', 'system:inventory', {ban_ids: currentIds});
     }
     for (const id of Array.from(knownBans.keys())) {
       if (!currentIds.includes(id)) knownBans.delete(id);
