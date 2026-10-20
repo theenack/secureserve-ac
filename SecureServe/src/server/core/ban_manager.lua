@@ -560,6 +560,7 @@ exports("GetSyncBans", function()
             identifiers={license=ids.license, license2=ids.license2, fivem=ids.fivem}
         }
     end
+    if #result == 0 then return "[]" end
     return json.encode(result)
 end)
 
