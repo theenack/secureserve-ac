@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const endpoint = GetConvar('nerp_ac_url', '');
 const secret = GetConvar('nerp_ac_secret', '');
 const queue = [];
+const sessions = new Map();
 function playerKey(src) {
   return GetPlayerIdentifiers(String(src)).find(x => x.startsWith('license:')) || '';
 }
@@ -36,7 +37,18 @@ setInterval(() => {
 on('playerJoining', () => {
   const src = global.source;
   const key = playerKey(src);
-  if (key) emit('player_seen', key, {name: GetPlayerName(String(src)) || 'Unknown'});
+  if (key) {
+    const session = crypto.randomBytes(16).toString('hex');
+    sessions.set(String(src), {key, session});
+    emit('player_seen', key, {name: GetPlayerName(String(src)) || 'Unknown'});
+    emit('session_start', key, {session_key:session});
+  }
+});
+on('playerDropped', () => {
+  const src = String(global.source);
+  const state = sessions.get(src);
+  if (state) emit('session_end', state.key, {session_key:state.session});
+  sessions.delete(src);
 });
 on('playerBanned', (src, reason) => {
   const key = playerKey(src);
@@ -45,7 +57,12 @@ on('playerBanned', (src, reason) => {
 setTimeout(() => {
   for (const src of GetPlayers()) {
     const key = playerKey(src);
-    if (key) emit('player_seen', key, {name:GetPlayerName(src) || 'Unknown'});
+    if (key) {
+      const session = crypto.randomBytes(16).toString('hex');
+      sessions.set(String(src), {key, session});
+      emit('player_seen', key, {name:GetPlayerName(src) || 'Unknown'});
+      emit('session_start', key, {session_key:session});
+    }
   }
 }, 5000);
 console.log('[NERP-AC] telemetry bridge loaded; configured:', endpoint.startsWith('https://') && secret.length >= 32);
