@@ -84,41 +84,21 @@ function getResourcePath(resourceName) {
  * @return {Array<Object>} Array of resource objects with name, path, and manifest properties
  */
 function findAllResources() {
-    const resourceDirs = [];
-    
-    let currentPath = PARENT_PATH;
-    let resourcesPath = null;
-    let attempts = 0;
-    
-    while (!resourcesPath && attempts < 5) {
-        attempts++;
-        
-        if (path.basename(currentPath).toLowerCase() === 'resources') {
-            resourcesPath = currentPath;
-            break;
-        }
-        
-        const possibleResourcesPath = path.join(currentPath, 'resources');
-        if (fs.existsSync(possibleResourcesPath)) {
-            resourcesPath = possibleResourcesPath;
-            break;
-        }
-        
-        const parentPath = path.dirname(currentPath);
-        if (parentPath === currentPath) {
-            break;
-        }
-        currentPath = parentPath;
+    // Modern FXServer restricts arbitrary filesystem traversal. Enumerate
+    // resources using server natives and their registered resource paths.
+    const found = [];
+    const count = GetNumResources();
+    for (let i = 0; i < count; i++) {
+        const name = GetResourceByFindIndex(i);
+        if (!name || name === CURRENT_RESOURCE_NAME) continue;
+        const resourcePath = GetResourcePath(name);
+        if (!resourcePath) continue;
+        const manifest = LoadResourceFile(name, 'fxmanifest.lua') !== null
+            ? 'fxmanifest.lua'
+            : (LoadResourceFile(name, '__resource.lua') !== null ? '__resource.lua' : null);
+        if (manifest) found.push({name, path: resourcePath, manifest});
     }
-    
-    if (resourcesPath) {
-        scanDirectory(resourcesPath, resourceDirs);
-    } else {
-        Logger.warning("Could not find main resources directory, using parent directory only");
-        scanDirectory(PARENT_PATH, resourceDirs);
-    }
-    
-    return resourceDirs;
+    return found;
 }
 
 /**
@@ -164,12 +144,8 @@ function scanDirectory(dirPath, resourceDirs, depth = 0) {
  * @return {string|null} Content of the manifest file or null if read failed
  */
 function readManifestFile(filePath) {
-    try {
-        return fs.readFileSync(filePath, 'utf8');
-    } catch (error) {
-        Logger.error(`Reading manifest file ${filePath}: ${error.message}`);
-        return null;
-    }
+    const resource = findAllResources().find(r => path.join(r.path, r.manifest) === filePath);
+    return resource ? LoadResourceFile(resource.name, resource.manifest) : null;
 }
 
 /**
@@ -179,13 +155,8 @@ function readManifestFile(filePath) {
  * @return {boolean} Success status
  */
 function writeManifestFile(filePath, content) {
-    try {
-        fs.writeFileSync(filePath, content, 'utf8');
-        return true;
-    } catch (error) {
-        Logger.error(`Writing manifest file ${filePath}: ${error.message}`);
-        return false;
-    }
+    const resource = findAllResources().find(r => path.join(r.path, r.manifest) === filePath);
+    return resource ? SaveResourceFile(resource.name, resource.manifest, content, -1) === true : false;
 }
 
 /**
@@ -687,7 +658,7 @@ function installSecureServe() {
         }
     }
     
-    ensureSecureServeStartsFirst();
+    Logger.warning('Verify SecureServe startup order manually in server.cfg; automatic config editing is disabled.');
     
     Logger.info(`${CURRENT_RESOURCE_NAME} installation complete. Success: ${successCount}, Failed: ${failCount}`);
 }
