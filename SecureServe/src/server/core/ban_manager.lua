@@ -28,6 +28,22 @@ end
 
 function BanManager.initialize()
     BanManager.load_bans()
+    -- The bridge can request a narrowly-scoped unban by SecureServe ban ID.
+    -- Server-only event: never RegisterNetEvent (clients cannot invoke it).
+    AddEventHandler("NERP-AC:RemoteUnban", function(banId, callback)
+        if GetInvokingResource() ~= "NERP-ac-bridge" then return end
+        if type(callback) ~= "function" then return end
+        if type(banId) ~= "string" or not banId:match("^[%w_-]+$") or #banId > 64 then
+            callback(false, "invalid ban ID")
+            return
+        end
+        -- MySQL.scalar returns nil for NULL and missing rows: check existence.
+        local rows = MySQL.query.await("SELECT id,revoked_at FROM nerp_ac_bans WHERE id=? LIMIT 1", {banId})
+        if not rows or not rows[1] then callback(false, "ban not found"); return end
+        if rows[1].revoked_at then callback(true, "already revoked"); return end
+        local ok = BanManager.unban_player(banId)
+        callback(ok == true, ok and "revoked" or "failed")
+    end)
 
     for _, ban in ipairs(BanManager.bans) do
         local n = tonumber(ban.id)
@@ -50,11 +66,12 @@ function BanManager.initialize()
         local backupName = BanManager.ban_file .. ".backup.clear." .. os.time()
         SaveResourceFile(GetCurrentResourceName(), backupName,
             json.encode(BanManager.bans, { indent = true }), -1)
+        MySQL.update.await("UPDATE nerp_ac_bans SET revoked_at=? WHERE revoked_at IS NULL", {os.time()})
         BanManager.bans = {}
         BanManager.bans_index = {}
-        BanManager.dirty = true
-        BanManager.save_bans()
-        logger.info("Cleared " .. count .. " bans")
+        BanManager.pending_bans = {}
+        BanManager.dirty = false
+        logger.info("Revoked " .. count .. " bans in SQL")
     end, true)
 
     BanManager.clean_expired_bans()
@@ -136,73 +153,115 @@ function BanManager.initialize()
     logger.info("^5[SUCCESS] ^3Ban Manager^7 initialized")
 end
 
+-- Authoritative SQL ban storage. bans.json is read only during the first migration.
+-- The metadata marker prevents a subsequently cleared SQL table from reimporting
+-- historical bans from an old JSON file.
+local function mysql_ready()
+    return MySQL and MySQL.query and MySQL.query.await and MySQL.update and MySQL.update.await
+end
+
+local function create_tables()
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS nerp_ac_bans (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        player_name VARCHAR(128) NOT NULL DEFAULT 'Unknown',
+        reason TEXT NOT NULL,
+        identifiers_json LONGTEXT NOT NULL,
+        banned_at BIGINT NOT NULL DEFAULT 0,
+        expires_at BIGINT NOT NULL DEFAULT 0,
+        admin VARCHAR(128) NOT NULL DEFAULT 'System',
+        detection TEXT NULL,
+        screenshot TEXT NULL,
+        revoked_at BIGINT NULL,
+        INDEX idx_nerp_ac_active (revoked_at, expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS nerp_ac_meta (
+        meta_key VARCHAR(64) PRIMARY KEY,
+        meta_value VARCHAR(255) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+end
+
+local function decode_json_bans()
+    local raw = LoadResourceFile(GetCurrentResourceName(), BanManager.ban_file)
+    if not raw or raw == "" then return {} end
+    local ok, records = pcall(json.decode, raw)
+    if not ok or type(records) ~= "table" then
+        error("Invalid legacy bans.json; refusing migration to avoid data loss")
+    end
+    return records
+end
+
+local function sql_upsert(ban)
+    return MySQL.update.await([[INSERT INTO nerp_ac_bans
+        (id,player_name,reason,identifiers_json,banned_at,expires_at,admin,detection,screenshot,revoked_at)
+        VALUES (?,?,?,?,?,?,?,?,?,NULL)
+        ON DUPLICATE KEY UPDATE player_name=VALUES(player_name),reason=VALUES(reason),
+        identifiers_json=VALUES(identifiers_json),banned_at=VALUES(banned_at),
+        expires_at=VALUES(expires_at),admin=VALUES(admin),detection=VALUES(detection),
+        screenshot=VALUES(screenshot),revoked_at=NULL]], {
+        tostring(ban.id), tostring(ban.player_name or "Unknown"), tostring(ban.reason or ""),
+        json.encode(ban.identifiers or {}), tonumber(ban.timestamp) or 0,
+        tonumber(ban.expires) or 0, tostring(ban.admin or "System"),
+        tostring(ban.detection or ""), ban.screenshot,
+    })
+end
+
 function BanManager.load_bans()
-    local content = LoadResourceFile(GetCurrentResourceName(), BanManager.ban_file)
-
-    if not content or content == "" then
-        BanManager.bans = {}
-        BanManager.bans_index = {}
-        logger.warn("No bans.json found or empty. Starting empty.")
-        return
+    if not mysql_ready() then
+        error("[SecureServe] oxmysql is required for SQL ban enforcement; will not start with an empty ban list")
     end
-
-    local ok, result = pcall(json.decode, content)
-    if not ok or not result then
-        BanManager.load_attempts = BanManager.load_attempts + 1
-        logger.error("Failed to load bans (attempt " .. BanManager.load_attempts .. ")")
-        if BanManager.load_attempts < BanManager.max_load_attempts then
-            local backup = BanManager.ban_file .. ".backup." .. os.time()
-            SaveResourceFile(GetCurrentResourceName(), backup, content, -1)
-            logger.warn("Created backup: " .. backup)
-            SetTimeout(5000, BanManager.load_bans)
-        else
-            BanManager.bans = {}
-            BanManager.bans_index = {}
+    create_tables()
+    local migrated = MySQL.scalar.await("SELECT meta_value FROM nerp_ac_meta WHERE meta_key='legacy_json_imported'")
+    if not migrated then
+        local old = decode_json_bans()
+        for _, ban in ipairs(old) do
+            if ban.id and type(ban.identifiers) == "table" then
+                sql_upsert(ban)
+            end
         end
-        return
+        MySQL.update.await("INSERT INTO nerp_ac_meta (meta_key,meta_value) VALUES ('legacy_json_imported',?)", {
+            tostring(os.time())
+        })
+        logger.info(("Imported %d historical bans from bans.json into SQL"):format(#old))
     end
 
+    local rows = MySQL.query.await([[SELECT * FROM nerp_ac_bans
+        WHERE revoked_at IS NULL AND (expires_at=0 OR expires_at>?) ORDER BY banned_at,id]], {os.time()})
     BanManager.bans = {}
-    for _, ban in ipairs(result) do
-        if ban.id and ban.identifiers then
-            BanManager.bans[#BanManager.bans + 1] = ban
+    BanManager.pending_bans = {}
+    for _, row in ipairs(rows or {}) do
+        local ok, identifiers = pcall(json.decode, row.identifiers_json or "{}")
+        if ok and type(identifiers) == "table" then
+            BanManager.bans[#BanManager.bans + 1] = {
+                id=tostring(row.id), player_name=row.player_name, reason=row.reason,
+                identifiers=identifiers, timestamp=tonumber(row.banned_at) or 0,
+                expires=tonumber(row.expires_at) or 0, admin=row.admin,
+                detection=row.detection, screenshot=row.screenshot
+            }
         else
-            logger.warn("Skipping invalid ban entry")
+            logger.error("Invalid identifiers JSON for SQL ban " .. tostring(row.id))
         end
     end
     rebuild_index()
-    logger.info("Loaded " .. #BanManager.bans .. " bans")
+    logger.info(("Loaded %d active bans from SQL"):format(#BanManager.bans))
 end
 
 function BanManager.save_bans()
+    -- Preserve the existing in-memory interface for admin panels while writing
+    -- authoritative changes through SQL before reporting success.
     if #BanManager.pending_bans > 0 then
-        for _, b in ipairs(BanManager.pending_bans) do
-            BanManager.bans[#BanManager.bans + 1] = b
-            if b.identifiers then
-                for _, id_value in pairs(b.identifiers) do
-                    if type(id_value) == "string" then
-                        BanManager.bans_index[id_value] = b
-                    end
-                end
-            end
+        for _, ban in ipairs(BanManager.pending_bans) do
+            sql_upsert(ban)
+            BanManager.bans[#BanManager.bans + 1] = ban
         end
         BanManager.pending_bans = {}
     end
+    BanManager.dirty = false
+    rebuild_index()
+    return true
+end
 
-    local ok, content = pcall(json.encode, BanManager.bans, { indent = true })
-    if not ok or not content then
-        logger.error("Failed to encode bans to JSON")
-        return false
-    end
-
-    local saved = SaveResourceFile(GetCurrentResourceName(), BanManager.ban_file, content, -1)
-    if saved then
-        BanManager.dirty = false
-        logger.debug("Saved " .. #BanManager.bans .. " bans")
-        return true
-    end
-    logger.error("Failed to write bans file")
-    return false
+function BanManager.get_sync_bans()
+    return BanManager.bans
 end
 
 function BanManager.clean_expired_bans()
@@ -219,7 +278,6 @@ function BanManager.clean_expired_bans()
     end
     if removed then
         BanManager.bans = kept
-        BanManager.dirty = true
         rebuild_index()
     end
 end
@@ -363,9 +421,14 @@ function BanManager.ban_player(player_id, reason, details)
     }
 
     BanManager.next_ban_id = BanManager.next_ban_id + 1
-    BanManager.pending_bans[#BanManager.pending_bans + 1] = ban_data
-    BanManager.dirty = true
-    BanManager.save_bans()
+    -- Write the ban to SQL before dropping the player.
+    local persisted, persistErr = pcall(sql_upsert, ban_data)
+    if not persisted then
+        logger.error("SQL ban write failed: " .. tostring(persistErr))
+        return false
+    end
+    BanManager.bans[#BanManager.bans + 1] = ban_data
+    rebuild_index()
 
     logger.warn(("Banned %s (id %s, banId %s) reason: %s"):format(player_name, pid, ban_data.id, reason))
 
@@ -452,10 +515,19 @@ function BanManager.unban_player(identifier)
     end
 
     if found then
+        local ids = {}
+        for _, ban in ipairs(BanManager.bans) do
+            local retained = false
+            for _, entry in ipairs(kept) do
+                if entry == ban then retained = true; break end
+            end
+            if not retained then ids[#ids+1] = tostring(ban.id) end
+        end
+        for _, id in ipairs(ids) do
+            MySQL.update.await("UPDATE nerp_ac_bans SET revoked_at=? WHERE id=? AND revoked_at IS NULL", {os.time(), id})
+        end
         BanManager.bans = kept
         rebuild_index()
-        BanManager.dirty = true
-        BanManager.save_bans()
         return true
     end
     return false
