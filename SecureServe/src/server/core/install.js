@@ -905,11 +905,11 @@ on('onServerResourceStart', (resourceName) => {
                 let moduleEnabled = false;
                 try {
                     const cfg = fs.readFileSync(configPath, 'utf8');
-                    const literal = cfg.match(/ModuleEnabled\\s*=\\s*(true|false)\\b/i);
-                    const entity = cfg.match(/Config\\.EntityModule\\s*=\\s*\\{[\\s\\S]*?\\bEnabled\\s*=\\s*(true|false)\\b/i);
+                    const literal = cfg.match(/ModuleEnabled\s*=\s*(true|false)\b/i);
+                    const entity = cfg.match(/Config\.EntityModule\s*=\s*\{[\s\S]*?\bEnabled\s*=\s*(true|false)\b/i);
                     if (literal) {
                         moduleEnabled = literal[1].toLowerCase() === 'true';
-                    } else if (/ModuleEnabled\\s*=\\s*Config\\.EntityModule\\s+and\\s+Config\\.EntityModule\\.Enabled\\s+or\\s+false/.test(cfg) && entity) {
+                    } else if (/ModuleEnabled\s*=\s*Config\.EntityModule\s+and\s+Config\.EntityModule\.Enabled\s+or\s+false/.test(cfg) && entity) {
                         moduleEnabled = entity[1].toLowerCase() === 'true';
                     } else {
                         moduleEnabled = false;
