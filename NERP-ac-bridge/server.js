@@ -55,7 +55,9 @@ on('playerBanned', (src, reason) => {
   if (key) emit('detection', key, {detection_type: String(reason || 'SecureServe ban').slice(0,128)});
 });
 setTimeout(() => {
-  for (const src of GetPlayers()) {
+  for (let i = 0; i < GetNumPlayerIndices(); i++) {
+    const src = GetPlayerFromIndex(i);
+    if (src === null || src === undefined) continue;
     const key = playerKey(src);
     if (key) {
       const session = crypto.randomBytes(16).toString('hex');
