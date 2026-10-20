@@ -535,8 +535,25 @@ function BanManager.unban_player(identifier)
     return false
 end
 
+-- Admin lookup must query the authoritative SQL table, not the active
+-- enforcement cache. Include expired and revoked records for audit/history.
 function BanManager.get_all_bans()
-    return BanManager.bans
+    local rows = MySQL.query.await([[SELECT id,player_name,reason,identifiers_json,
+        banned_at,expires_at,admin,detection,screenshot,revoked_at
+        FROM nerp_ac_bans ORDER BY banned_at DESC, id DESC LIMIT 2000]]) or {}
+    local bans = {}
+    for _, row in ipairs(rows) do
+        local ok, identifiers = pcall(json.decode, row.identifiers_json or "{}")
+        if not ok or type(identifiers) ~= "table" then identifiers = {} end
+        bans[#bans + 1] = {
+            id=tostring(row.id), player_name=row.player_name, reason=row.reason,
+            identifiers=identifiers, timestamp=tonumber(row.banned_at) or 0,
+            expires=tonumber(row.expires_at) or 0, admin=row.admin,
+            detection=row.detection, screenshot=row.screenshot,
+            revoked_at=row.revoked_at and tonumber(row.revoked_at) or nil
+        }
+    end
+    return bans
 end
 
 function BanManager.get_recent_bans(count)
