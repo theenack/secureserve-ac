@@ -206,6 +206,7 @@ if IsDuplicityVersion() then
     local originalAddEventHandler = AddEventHandler
     local originalRegisterNetEvent = RegisterNetEvent
     local registeredEvents = {}
+    local protectedCallbacks = {}
     local publicTraps = {}
     local playerSessions = {}
     local startedAt = os.time()
@@ -429,6 +430,18 @@ if IsDuplicityVersion() then
         encryptedEventName = encryptDecrypt(eventName)
         registeredEvents[eventName] = encryptedEventName
         originalRegisterNetEvent(encryptedEventName)
+        if not isExemptEvent(eventName) then
+            -- Install ONE authenticated handler per encrypted event. Multiple
+            -- callbacks must not independently consume the same seq number.
+            protectedCallbacks[eventName] = protectedCallbacks[eventName] or {}
+            originalAddEventHandler(encryptedEventName, protectedHandler(eventName, function(...)
+                local callbacks = protectedCallbacks[eventName]
+                if not callbacks then return end
+                for i = 1, #callbacks do
+                    callbacks[i](...)
+                end
+            end))
+        end
         return encryptedEventName
     end
 
@@ -475,8 +488,9 @@ if IsDuplicityVersion() then
 
         registerPublicTrap(eventName)
         if type(callback) == "function" then
-            originalAddEventHandler(eventName, localOnlyHandler(callback))
-            return originalAddEventHandler(encryptedEventName, protectedHandler(eventName, callback))
+            local handlerId = originalAddEventHandler(eventName, localOnlyHandler(callback))
+            protectedCallbacks[eventName][#protectedCallbacks[eventName] + 1] = callback
+            return handlerId
         end
     end
 
@@ -496,8 +510,9 @@ if IsDuplicityVersion() then
         end
 
         registerPublicTrap(eventName)
-        originalAddEventHandler(eventName, localOnlyHandler(handler), ...)
-        return originalAddEventHandler(encryptedEventName, protectedHandler(eventName, handler), ...)
+        local handlerId = originalAddEventHandler(eventName, localOnlyHandler(handler), ...)
+        protectedCallbacks[eventName][#protectedCallbacks[eventName] + 1] = handler
+        return handlerId
     end
 
     RegisterServerEvent = RegisterNetEvent
