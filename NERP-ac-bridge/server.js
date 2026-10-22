@@ -153,7 +153,7 @@ function enqueue(type, key, extra = {}) {
 }
 function stablePlayerKey(ids) {
   if (!ids || typeof ids !== 'object') return '';
-  for (const key of ['license', 'license2', 'fivem']) {
+  for (const key of ['license', 'license2', 'fivem', 'discord', 'steam']) {
     const value = ids[key];
     if (typeof value === 'string' && /^[a-zA-Z0-9:_-]{3,128}$/.test(value)) return value;
   }
@@ -179,7 +179,7 @@ function syncBans() {
       if (!ban || typeof ban !== 'object') { skipped++; continue; }
       const banId = String(ban.id || '');
       const key = stablePlayerKey(ban.identifiers);
-      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(banId) || !key) { skipped++; continue; }
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(banId) || !key) { skipped++; console.warn('[NERP-AC] skipping ban with missing eligible identifier or invalid ID:', banId); continue; }
       currentIds.push(banId);
       const data = {
         ban_id: banId, name: String(ban.player_name || 'Unknown').slice(0, 128),
