@@ -56,6 +56,15 @@ end
 ---@param ... any Additional values to include in the log
 ---@return string formatted_message The formatted log message
 function Logger.format(level, message, ...)
+    -- Keep invalid/empty informational payloads out of the server console.
+    -- Preserve a meaningful placeholder for other severities without throwing.
+    if message == nil or message == json.null then
+        message = "(missing log message)"
+    elseif type(message) ~= "string" then
+        message = tostring(message)
+    elseif message:match("^%s*$") then
+        message = "(empty log message)"
+    end
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
     local color = Logger.colors[level] or Logger.colors.INFO
     local reset = Logger.colors.RESET
@@ -197,7 +206,13 @@ function Logger.info(message, ...)
     if Logger.levels.INFO < Logger.level then
         return
     end
-    
+
+    -- Some integrations send JSON null or an empty string as routine info.
+    -- Ignore these unusable messages without affecting detection or punishment.
+    if message == nil or message == json.null or (type(message) == "string" and (message:match("^%s*$") or message:match("^%s*null%s*$"))) then
+        return
+    end
+
     local formatted = Logger.format("INFO", message, ...)
     Logger.add_to_history("INFO", formatted)
     
