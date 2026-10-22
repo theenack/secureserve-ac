@@ -37,7 +37,10 @@ function BanManager.initialize()
         local ok, result, message = pcall(function()
             local rows = MySQL.query.await("SELECT id,revoked_at FROM nerp_ac_bans WHERE id=? LIMIT 1", {banId})
             if not rows or not rows[1] then return false, "ban not found" end
-            if rows[1].revoked_at then return true, "already revoked" end
+            if rows[1].revoked_at then
+                BanManager.load_bans()
+                return true, "already revoked"
+            end
             -- The authoritative SQL row may exist even when the active cache
             -- was not loaded (or the ban expired). Revoke by exact ban ID first.
             MySQL.update.await("UPDATE nerp_ac_bans SET revoked_at=? WHERE id=? AND revoked_at IS NULL", {os.time(), banId})
@@ -49,6 +52,8 @@ function BanManager.initialize()
             end
             BanManager.bans = active
             rebuild_index()
+            -- Reload the authoritative SQL state immediately; no resource restart required.
+            BanManager.load_bans()
             return true, "revoked"
         end)
         TriggerEvent("NERP-AC:RemoteUnbanResult", commandId,
