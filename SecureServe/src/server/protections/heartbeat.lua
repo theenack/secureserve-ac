@@ -263,9 +263,9 @@ function Heartbeat.banPlayer(playerId, reason)
     logger.warn("Heartbeat violation for player " .. tostring(playerId) .. ": " .. reason)
 
     local cfg = config_manager.get_config()
-    local shouldBan = true
+    local shouldBan = false
     if cfg and cfg.Module and cfg.Module.Heartbeat then
-        shouldBan = cfg.Module.Heartbeat.BanOnViolation ~= false
+        shouldBan = cfg.Module.Heartbeat.BanOnViolation == true
     end
 
     if shouldBan and ban_manager then
