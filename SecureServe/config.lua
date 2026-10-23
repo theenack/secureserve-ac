@@ -4,7 +4,7 @@ Config = Config or {}
 -- //[Main Config]\\ --
 Config.ServerName = "NewEnergyRP"
 Config.DiscordInvite = "https://discord.gg/newenergyrp"
-Config.AppealURL = "https://discord.gg/"
+Config.AppealURL = "https://discord.gg/newenergyrp"
 Config.RequireSteam = false
 Config.IdentifierCheck = true
 Config.Debug = true
