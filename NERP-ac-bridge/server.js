@@ -170,6 +170,7 @@ function syncBans() {
   }
   syncing = true;
   try {
+    if (GetResourceState('SecureServe') !== 'started') throw new Error('SecureServe not started');
     const snapshot = exports['SecureServe'].GetSyncBans();
     const bans = JSON.parse(snapshot);
     if (!Array.isArray(bans)) throw new Error('SecureServe SQL snapshot unavailable');
