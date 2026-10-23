@@ -259,6 +259,9 @@ on('playerDropped', () => {
 on('playerBanned', (src, reason) => {
   const key = playerKey(src);
   if (key) queueTelemetry('detection', key, {detection_type: String(reason || 'SecureServe ban').slice(0,128)});
+  // SecureServe persists bans before firing this event. Sync immediately so
+  // the website doesn't depend on the next scheduled inventory poll.
+  setTimeout(syncBans, 1000);
 });
 setTimeout(() => {
   for (const src of GetPlayers()) {
