@@ -160,10 +160,13 @@ function BanManager.initialize()
     CreateThread(function()
         while true do
             Wait(60000)
-            BanManager.clean_expired_bans()
+            -- Flush local changes before refreshing the active SQL snapshot.
             if BanManager.dirty then
                 BanManager.save_bans()
             end
+            -- SQL is authoritative: honor manual revokes without a restart.
+            local ok, err = pcall(BanManager.load_bans)
+            if not ok then logger.error("Periodic SQL ban refresh failed: " .. tostring(err)) end
         end
     end)
 
