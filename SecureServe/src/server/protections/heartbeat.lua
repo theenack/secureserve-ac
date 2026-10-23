@@ -268,15 +268,10 @@ function Heartbeat.banPlayer(playerId, reason)
         shouldBan = cfg.Module.Heartbeat.BanOnViolation == true
     end
 
-    if shouldBan and ban_manager then
-        ban_manager.ban_player(playerId, "Anticheat violation: " .. reason, {
-            admin     = "Heartbeat System",
-            time      = 2147483647,
-            detection = "Heartbeat - " .. reason,
-        })
-    else
-        DropPlayer(tostring(playerId), "Anticheat violation: " .. reason)
-    end
+    -- Missed keep-alive checks can result from hitching, loading, or network loss.
+    -- Never permanently ban on heartbeat evidence alone.
+    logger.warn("Heartbeat enforcement uses a kick (not a ban); configured BanOnViolation=" .. tostring(shouldBan))
+    DropPlayer(tostring(playerId), "SecureServe keep-alive timed out; please reconnect")
 end
 
 return Heartbeat
