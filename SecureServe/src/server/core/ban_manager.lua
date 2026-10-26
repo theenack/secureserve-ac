@@ -584,18 +584,24 @@ function BanManager.get_recent_bans(count)
     return result
 end
 
--- Read-only export for the server-only telemetry bridge. Do not expose tokens/IPs.
+-- Read-only SQL export for the server-only telemetry bridge. Include history,
+-- but never expose IP addresses, hardware tokens, endpoints or other secrets.
 exports("GetSyncBans", function()
     local result = {}
-    for _, b in ipairs(BanManager.bans) do
-        local ids = b.identifiers or {}
+    local rows = MySQL.query.await([[SELECT id, player_name, reason, identifiers_json,
+        banned_at, expires_at, revoked_at FROM nerp_ac_bans
+        ORDER BY banned_at DESC, id DESC LIMIT 2000]]) or {}
+    for _, row in ipairs(rows) do
+        local ok, ids = pcall(json.decode, row.identifiers_json or "{}")
+        if not ok or type(ids) ~= "table" then ids = {} end
         result[#result+1] = {
-            id=b.id, player_name=b.player_name, reason=b.reason,
-            timestamp=b.timestamp, expires=b.expires,
+            id=tostring(row.id), player_name=row.player_name, reason=row.reason,
+            timestamp=tonumber(row.banned_at) or 0,
+            expires=tonumber(row.expires_at) or 0,
+            revoked_at=row.revoked_at and tonumber(row.revoked_at) or nil,
             identifiers={license=ids.license, license2=ids.license2, fivem=ids.fivem}
         }
     end
-    if #result == 0 then return "[]" end
     return json.encode(result)
 end)
 
