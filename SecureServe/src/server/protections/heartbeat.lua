@@ -11,12 +11,12 @@ local Heartbeat = {
     silentStrikes           = {},
     playerJoinTime          = {},
     aliveNonce              = {},
-    checkInterval           = 3000,
-    maxFailures             = 7,
+    checkInterval           = 10000,
+    maxFailures             = 5,
     heartbeatCheckInterval  = 5000,
-    timeoutThreshold        = 30,
-    gracePeriod             = 30,
-    silenceStrikes          = 2,
+    timeoutThreshold        = 90,
+    gracePeriod             = 90,
+    silenceStrikes          = 3,
     initialized             = false,
 }
 
@@ -82,6 +82,8 @@ end
 
 local function is_ready_for_alive_check(pid, now)
     if not is_connected(pid) then return false end
+    -- Delay challenges until the player has completed initial SecureServe handshaking.
+    if not Heartbeat.allowedStop[pid] then return false end
 
     local joined_at = Heartbeat.playerJoinTime[pid]
     if not joined_at or (now - joined_at) < Heartbeat.gracePeriod then
@@ -112,12 +114,12 @@ end
 local function load_config()
     local config = (SecureServe and SecureServe.Module and SecureServe.Module.Heartbeat) or {}
 
-    Heartbeat.checkInterval          = tonumber(config.CheckInterval)          or 3000
-    Heartbeat.maxFailures            = tonumber(config.MaxFailures)            or 7
+    Heartbeat.checkInterval          = tonumber(config.CheckInterval)          or 10000
+    Heartbeat.maxFailures            = tonumber(config.MaxFailures)            or 5
     Heartbeat.heartbeatCheckInterval = tonumber(config.HeartbeatCheckInterval) or 5000
-    Heartbeat.timeoutThreshold       = tonumber(config.TimeoutThreshold)       or 30
+    Heartbeat.timeoutThreshold       = tonumber(config.TimeoutThreshold)       or 90
     Heartbeat.gracePeriod            = tonumber(config.GracePeriod)            or 30
-    Heartbeat.silenceStrikes         = tonumber(config.SilenceStrikes)         or 2
+    Heartbeat.silenceStrikes         = tonumber(config.SilenceStrikes)         or 3
 end
 
 function Heartbeat.initialize()
@@ -200,7 +202,7 @@ function Heartbeat.startMonitoringThreads()
                     local last = Heartbeat.playerHeartbeats[pid]
                     local timeSinceJoin = now - Heartbeat.playerJoinTime[pid]
 
-                    if last and timeSinceJoin >= Heartbeat.gracePeriod
+                    if Heartbeat.allowedStop[pid] and last and timeSinceJoin >= Heartbeat.gracePeriod
                         and (now - last) > Heartbeat.timeoutThreshold
                     then
                         Heartbeat.silentStrikes[pid] = (Heartbeat.silentStrikes[pid] or 0) + 1
