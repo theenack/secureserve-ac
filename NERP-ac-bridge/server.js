@@ -159,7 +159,7 @@ function stablePlayerKey(ids) {
   }
   return '';
 }
-function syncBans() {
+async function syncBans() {
   if (syncing) return;
   if (!endpoint.startsWith('https://') || secret.length < 32) {
     if (Date.now() - lastWarnAt > 60000) {
@@ -171,8 +171,10 @@ function syncBans() {
   syncing = true;
   try {
     if (GetResourceState('SecureServe') !== 'started') throw new Error('SecureServe not started');
-    const snapshot = exports['SecureServe'].GetSyncBans();
-    const bans = JSON.parse(snapshot);
+    // Lua exports that await oxmysql resolve asynchronously across the JS/Lua
+    // runtime boundary. Do not JSON.parse the unresolved Promise.
+    const snapshot = await exports['SecureServe'].GetSyncBans();
+    const bans = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot;
     if (!Array.isArray(bans)) throw new Error('SecureServe SQL snapshot unavailable');
     const currentIds = [];
     let skipped = 0;
