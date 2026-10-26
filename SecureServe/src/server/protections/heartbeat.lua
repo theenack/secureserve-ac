@@ -82,16 +82,15 @@ end
 
 local function is_ready_for_alive_check(pid, now)
     if not is_connected(pid) then return false end
-    -- Delay challenges until the player has completed initial SecureServe handshaking.
-    if not Heartbeat.allowedStop[pid] then return false end
+    -- Initial loading can defer heartbeat events; require the grace window first.
 
     local joined_at = Heartbeat.playerJoinTime[pid]
     if not joined_at or (now - joined_at) < Heartbeat.gracePeriod then
         return false
     end
 
-    -- Only challenge clients after the initial join/ready handshake and grace window.
-    -- A missing handshake is not proof of cheating during initial resource loading.
+    -- After the grace window, check all clients; a missing ready event
+    -- must not permanently bypass the anti-cheat alive challenge.
     return true
 end
 
@@ -203,7 +202,7 @@ function Heartbeat.startMonitoringThreads()
                     local last = Heartbeat.playerHeartbeats[pid]
                     local timeSinceJoin = now - Heartbeat.playerJoinTime[pid]
 
-                    if Heartbeat.allowedStop[pid] and last and timeSinceJoin >= Heartbeat.gracePeriod
+                    if last and timeSinceJoin >= Heartbeat.gracePeriod
                         and (now - last) > Heartbeat.timeoutThreshold
                     then
                         Heartbeat.silentStrikes[pid] = (Heartbeat.silentStrikes[pid] or 0) + 1
