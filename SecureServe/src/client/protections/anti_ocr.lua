@@ -7,7 +7,9 @@ local AntiOcr = {
 
 ---@description Initialize Anti OCR protection
 function AntiOcr.initialize()
-    if not SecureServe.OCR then return end
+    -- This OCR engine depends on Tesseract/WebAssembly unavailable in FiveM NUI.
+    -- Fail closed for this optional detector: never screenshot or spin an error loop.
+    if not SecureServe.OCR or SecureServe.OCR.Enabled ~= true then return end
 
     local ocrWords = {}
     local screenshotInterval = 5500
