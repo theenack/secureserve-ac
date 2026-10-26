@@ -90,7 +90,8 @@ local function is_ready_for_alive_check(pid, now)
         return false
     end
 
-    -- Fix: fail-closed. Every connected player past the grace period is challenged. Before, requiring allowedStop+heartbeat let a client that never became "ready" (blocked/removed) escape the check entirely.
+    -- Only challenge clients after the initial join/ready handshake and grace window.
+    -- A missing handshake is not proof of cheating during initial resource loading.
     return true
 end
 
