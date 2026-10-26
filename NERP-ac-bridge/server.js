@@ -181,12 +181,16 @@ function syncBans() {
       const banId = String(ban.id || '');
       const key = stablePlayerKey(ban.identifiers);
       if (!/^[a-zA-Z0-9_-]{1,64}$/.test(banId) || !key) { skipped++; console.warn('[NERP-AC] skipping ban with missing eligible identifier or invalid ID:', banId); continue; }
-      currentIds.push(banId);
+      const revokedAt = Number(ban.revoked_at) || 0;
+      const expiresAt = Number(ban.expires) || 0;
+      const isActive = !revokedAt && (expiresAt === 0 || expiresAt > Math.floor(Date.now() / 1000));
+      if (isActive) currentIds.push(banId);
       const data = {
         ban_id: banId, name: String(ban.player_name || 'Unknown').slice(0, 128),
         reason: String(ban.reason || 'SecureServe ban').slice(0, 2048),
         banned_at: Number(ban.timestamp) || 0,
-        expires_at: Number(ban.expires) || 0
+        expires_at: expiresAt,
+        revoked_at: revokedAt
       };
       const hash = crypto.createHash('sha256').update(JSON.stringify([key, data])).digest('hex');
       if (knownBans.get(banId) !== hash) {
@@ -194,7 +198,7 @@ function syncBans() {
       }
     }
     lastScan = new Date().toISOString();
-    lastScanCounts = {total: bans.length, eligible: currentIds.length, skipped};
+    lastScanCounts = {total: bans.length, eligible: bans.length - skipped, active: currentIds.length, skipped};
     console.log('[NERP-AC] ban scan:', JSON.stringify(lastScanCounts), 'server:', safeServerId, 'pending:', queue.length, 'last HTTP:', lastHttp);
     // Periodic authoritative inventory reconciles unbans even if the bridge
     // was offline when they happened. Empty list is valid only after JSON parse.
