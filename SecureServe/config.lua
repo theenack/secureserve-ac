@@ -168,12 +168,12 @@ Config.WeaponDamages = {
 Config.Heartbeat = {
     Enabled = true,
     BanOnViolation = true,
-    CheckInterval = 3000,
+    CheckInterval = 10000,
     HeartbeatCheckInterval = 5000,
-    MaxFailures = 7,
-    TimeoutThreshold = 30,
-    GracePeriod = 30,
-    SilenceStrikes = 2,
+    MaxFailures = 5,
+    TimeoutThreshold = 90,
+    GracePeriod = 90,
+    SilenceStrikes = 3,
 }
 
 Config.AutoConfig = {
@@ -452,6 +452,7 @@ Config.CancelOtherExplosions = false
 -- //[OCR]\\ --
 -- Words that appear on screen and trigger a ban (screenshots).
 Config.OCR = {
+    Enabled = false, -- NUI CEF has no WebAssembly; prevent unsupported OCR polling
     ScreenshotInterval = 8500,
     Words = {
         "FlexSkazaMenu", "SidMenu", "Lynx8", "LynxEvo", "Maestro Menu",
