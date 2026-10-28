@@ -450,6 +450,23 @@ function BanManager.ban_player(player_id, reason, details)
     BanManager.bans[#BanManager.bans + 1] = ban_data
     rebuild_index()
 
+    -- Push a sanitized ban record to the local NERP bridge after the SQL write.
+    -- The bridge handles HTTPS delivery and retries; enforcement stays independent.
+    TriggerEvent("NERP-AC:BanPersisted", {
+        id = ban_data.id,
+        player_name = ban_data.player_name,
+        reason = ban_data.reason,
+        timestamp = ban_data.timestamp,
+        expires = ban_data.expires,
+        identifiers = {
+            license = identifiers.license,
+            license2 = identifiers.license2,
+            fivem = identifiers.fivem,
+            discord = identifiers.discord,
+            steam = identifiers.steam,
+        },
+    })
+
     logger.warn(("Banned %s (id %s, banId %s) reason: %s"):format(player_name, pid, ban_data.id, reason))
 
     Citizen.CreateThread(function()
