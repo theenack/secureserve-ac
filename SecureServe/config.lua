@@ -227,6 +227,10 @@ Config.SafeResources = {
     "codem-garaje",
     "rpemotes",
     "enack-propsystem",
+    "NERP-heists",
+    "projectx-atmprops",
+    "projectx-atmrobbery",
+    "cdev_pets",
 }
 
 
