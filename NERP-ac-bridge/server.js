@@ -299,7 +299,12 @@ on('playerBanned', (src, reason) => {
   setTimeout(syncBans, 1000);
 });
 setTimeout(() => {
-  for (const src of GetPlayers()) {
+  // FiveM server JS exposes GetNumPlayerIndices/GetPlayerFromIndex,
+  // not the Lua-only GetPlayers helper.
+  const count = GetNumPlayerIndices();
+  for (let i = 0; i < count; i++) {
+    const src = GetPlayerFromIndex(i);
+    if (src === null || src === undefined || src === '') continue;
     const key = playerKey(src);
     if (key) {
       const session = crypto.randomBytes(16).toString('hex');
