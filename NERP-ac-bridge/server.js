@@ -262,6 +262,35 @@ on('playerDropped', () => {
   if (state) queueTelemetry('session_end', state.key, {session_key:state.session});
   sessions.delete(src);
 });
+// SecureServe emits this only after the SQL ban insert succeeds.
+// Send the ban upsert immediately rather than waiting for the next database scan.
+on('NERP-AC:BanPersisted', (ban) => {
+  if (!ban || typeof ban !== 'object') return;
+  const banId = String(ban.id || '');
+  const key = stablePlayerKey(ban.identifiers);
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(banId) || !key) {
+    console.warn('[NERP-AC] immediate ban upload skipped: invalid ban id or identifier');
+    setTimeout(syncBans, 1000);
+    return;
+  }
+  const data = {
+    ban_id: banId,
+    name: String(ban.player_name || 'Unknown').slice(0, 128),
+    reason: String(ban.reason || 'SecureServe ban').slice(0, 2048),
+    banned_at: Number(ban.timestamp) || 0,
+    expires_at: Number(ban.expires) || 0,
+    revoked_at: 0
+  };
+  const hash = crypto.createHash('sha256').update(JSON.stringify([key, data])).digest('hex');
+  if (enqueue('ban_upsert', key, data)) {
+    knownBans.set(banId, hash);
+    console.log('[NERP-AC] immediate ban queued:', banId, 'server:', safeServerId);
+  } else {
+    console.warn('[NERP-AC] immediate ban upload could not be queued:', banId);
+  }
+  // Reconcile inventory as a fallback and verify eventual SQL consistency.
+  setTimeout(syncBans, 1000);
+});
 on('playerBanned', (src, reason) => {
   const key = playerKey(src);
   if (key) queueTelemetry('detection', key, {detection_type: String(reason || 'SecureServe ban').slice(0,128)});
