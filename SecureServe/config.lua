@@ -339,7 +339,6 @@ Config.BlacklistedWeapons = {
     "weapon_grenadelauncher",
     "weapon_minigun",
     "weapon_railgun",
-    "weapon_firework",
     "weapon_hominglauncher",
     "weapon_compactlauncher",
 }
