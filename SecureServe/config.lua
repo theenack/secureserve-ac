@@ -486,9 +486,9 @@ Config.Webhooks = {
     Debug      = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
 
     -- Server events
-    Join       = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
-    Leave      = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
-    Kill       = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
+    Join       = "",
+    Leave      = "",
+    Kill       = "",
     Resource   = "https://discord.com/api/webhooks/1501990252795924501/3DI87lTIo4j3WO1XHOy3fi55gIchK1cG6eOApBCTA6CtVN1CzNdlAytgjo7_ZKlNqm7q",
 
     -- Webhooks by blacklist category (used if individual webhooks are empty)
