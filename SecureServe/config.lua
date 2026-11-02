@@ -175,6 +175,8 @@ Config.Heartbeat = {
     GracePeriod = 90,
     SilenceStrikes = 3,
     ResponseGraceSeconds = 8, -- extra time for high ping / transient client hitches
+    LoadingTimeoutSeconds = 600,
+    PostReadyGraceSeconds = 120,
 }
 
 Config.AutoConfig = {

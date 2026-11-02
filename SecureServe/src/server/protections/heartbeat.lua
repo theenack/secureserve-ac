@@ -12,6 +12,10 @@ local Heartbeat = {
     playerJoinTime          = {},
     aliveNonce              = {},
     recentRecovery          = {},
+    playerReadyAt           = {},
+    challengeStartedAt      = {},
+    loadingTimeout          = 600,
+    postReadyGrace          = 120,
     checkInterval           = 10000,
     maxFailures             = 5,
     heartbeatCheckInterval  = 5000,
@@ -36,6 +40,8 @@ local function cleanup_player(pid)
     Heartbeat.playerJoinTime[pid]   = nil
     Heartbeat.aliveNonce[pid]       = nil
     Heartbeat.recentRecovery[pid]   = nil
+    Heartbeat.playerReadyAt[pid]    = nil
+    Heartbeat.challengeStartedAt[pid] = nil
 end
 
 -- Fix: unpredictable per-challenge nonce; a client must echo it back to prove it is alive (anti-spoof for "addalive").
@@ -86,16 +92,21 @@ end
 
 local function is_ready_for_alive_check(pid, now)
     if not is_connected(pid) then return false end
-    -- Initial loading can defer heartbeat events; require the grace window first.
 
     local joined_at = Heartbeat.playerJoinTime[pid]
-    if not joined_at or (now - joined_at) < Heartbeat.gracePeriod then
-        return false
+    if not joined_at then return false end
+
+    -- Never enforce during ordinary connection loading. Client signals ready
+    -- only after spawning and network initialization.
+    local ready_at = Heartbeat.playerReadyAt[pid]
+    if ready_at then
+        return (now - ready_at) >= Heartbeat.postReadyGrace
+            and (now - joined_at) >= Heartbeat.gracePeriod
     end
 
-    -- After the grace window, check all clients; a missing ready event
-    -- must not permanently bypass the anti-cheat alive challenge.
-    return true
+    -- Bound the exemption so disabling the SecureServe client cannot permanently
+    -- bypass monitoring. Loading beyond this limit is abnormal and logged.
+    return (now - joined_at) >= Heartbeat.loadingTimeout
 end
 
 local function can_punish_now(playerId, reason)
@@ -125,6 +136,8 @@ local function load_config()
     Heartbeat.gracePeriod            = tonumber(config.GracePeriod)            or 30
     Heartbeat.silenceStrikes         = tonumber(config.SilenceStrikes)         or 3
     Heartbeat.responseGraceSeconds   = math.max(2, tonumber(config.ResponseGraceSeconds) or 8)
+    Heartbeat.loadingTimeout          = math.max(180, tonumber(config.LoadingTimeoutSeconds) or 600)
+    Heartbeat.postReadyGrace          = math.max(30, tonumber(config.PostReadyGraceSeconds) or 120)
 end
 
 function Heartbeat.initialize()
@@ -171,9 +184,22 @@ function Heartbeat.setupEventHandlers()
         if not expected or nonce ~= expected then return end
 
         Heartbeat.aliveNonce[pid] = nil
+        Heartbeat.challengeStartedAt[pid] = nil
         Heartbeat.alive[pid] = true
         Heartbeat.recentRecovery[pid] = seconds()
         Heartbeat.failureCount[pid] = 0
+    end)
+
+    RegisterNetEvent("SecureServe:HeartbeatClientReady", function()
+        local pid = tonumber(source)
+        if not pid or not is_connected(pid) then return end
+        mark_joined(pid, seconds())
+        if not Heartbeat.playerReadyAt[pid] then
+            Heartbeat.playerReadyAt[pid] = seconds()
+            Heartbeat.failureCount[pid] = 0
+            Heartbeat.silentStrikes[pid] = 0
+            logger.info(("Heartbeat: player %s finished loading; enforcement begins after %ds"):format(pid, Heartbeat.postReadyGrace))
+        end
     end)
 
     RegisterNetEvent("allowedStop", function()
@@ -206,9 +232,8 @@ function Heartbeat.startMonitoringThreads()
                     mark_joined(pid, now)
 
                     local last = Heartbeat.playerHeartbeats[pid]
-                    local timeSinceJoin = now - Heartbeat.playerJoinTime[pid]
 
-                    if last and timeSinceJoin >= Heartbeat.gracePeriod
+                    if last and is_ready_for_alive_check(pid, now)
                         and (now - last) > Heartbeat.timeoutThreshold
                     then
                         Heartbeat.silentStrikes[pid] = (Heartbeat.silentStrikes[pid] or 0) + 1
@@ -240,6 +265,7 @@ function Heartbeat.startMonitoringThreads()
                     -- Fix: we emit a unique nonce per challenge; only a running client can echo it back.
                     local nonce = make_nonce()
                     Heartbeat.aliveNonce[pid] = nonce
+                    Heartbeat.challengeStartedAt[pid] = now
                     challenged[#challenged + 1] = pid
                     TriggerClientEvent("checkalive", pid, nonce)
                 end
@@ -252,6 +278,7 @@ function Heartbeat.startMonitoringThreads()
                 if is_ready_for_alive_check(pid, checked_at) then
                     if not Heartbeat.alive[pid] then
                         Heartbeat.aliveNonce[pid] = nil
+                        Heartbeat.challengeStartedAt[pid] = nil
                         Heartbeat.failureCount[pid] = (Heartbeat.failureCount[pid] or 0) + 1
 
                         -- Require sustained failure of both independent heartbeat signals.
@@ -272,6 +299,7 @@ function Heartbeat.startMonitoringThreads()
 end
 
 function Heartbeat.banPlayer(playerId, reason)
+    if not is_ready_for_alive_check(playerId, seconds()) then return end
     if not can_punish_now(playerId, reason) then return end
 
     logger.warn("Heartbeat violation for player " .. tostring(playerId) .. ": " .. reason)
