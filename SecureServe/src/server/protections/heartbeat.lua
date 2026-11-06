@@ -78,7 +78,6 @@ local function mark_heartbeat(pid, at)
 
     Heartbeat.playerHeartbeats[pid] = now
     Heartbeat.silentStrikes[pid] = 0
-    Heartbeat.recentRecovery[pid] = now
 
     if Heartbeat.pendingReady[pid] then
         Heartbeat.allowedStop[pid] = true
