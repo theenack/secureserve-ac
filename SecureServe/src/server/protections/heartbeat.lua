@@ -11,7 +11,6 @@ local Heartbeat = {
     silentStrikes           = {},
     playerJoinTime          = {},
     aliveNonce              = {},
-    challengeSequence       = {},
     recentRecovery          = {},
     playerReadyAt           = {},
     challengeStartedAt      = {},
@@ -40,7 +39,6 @@ local function cleanup_player(pid)
     Heartbeat.silentStrikes[pid]    = nil
     Heartbeat.playerJoinTime[pid]   = nil
     Heartbeat.aliveNonce[pid]       = nil
-    Heartbeat.challengeSequence[pid] = nil
     Heartbeat.recentRecovery[pid]   = nil
     Heartbeat.playerReadyAt[pid]    = nil
     Heartbeat.challengeStartedAt[pid] = nil
@@ -302,10 +300,6 @@ function Heartbeat.startMonitoringThreads()
             end
             -- Preserve the intended configurable challenge cadence.
             Citizen.Wait(math.max(1000, Heartbeat.checkInterval - Heartbeat.responseGraceSeconds * 1000))
-        end
-    end)                 end
-                end
-            end
         end
     end)
 end
