@@ -11,6 +11,7 @@ local Heartbeat = {
     silentStrikes           = {},
     playerJoinTime          = {},
     aliveNonce              = {},
+    challengeSequence       = {},
     recentRecovery          = {},
     playerReadyAt           = {},
     challengeStartedAt      = {},
@@ -39,6 +40,7 @@ local function cleanup_player(pid)
     Heartbeat.silentStrikes[pid]    = nil
     Heartbeat.playerJoinTime[pid]   = nil
     Heartbeat.aliveNonce[pid]       = nil
+    Heartbeat.challengeSequence[pid] = nil
     Heartbeat.recentRecovery[pid]   = nil
     Heartbeat.playerReadyAt[pid]    = nil
     Heartbeat.challengeStartedAt[pid] = nil
@@ -247,51 +249,61 @@ function Heartbeat.startMonitoringThreads()
                         end
                     else
                         Heartbeat.silentStrikes[pid] = 0
-                    end
-                end
-            end
-        end
-    end)
-
-    Citizen.CreateThread(function()
+         Citizen.CreateThread(function()
         while true do
+            -- Only one outstanding challenge per player.  The previous loop
+            -- replaced nonces before its response window had elapsed under
+            -- certain scheduling conditions, which could reject valid replies.
             local now = seconds()
             local challenged = {}
 
             for _, playerId in ipairs(GetPlayers()) do
                 local pid = tonumber(playerId)
                 if pid and is_ready_for_alive_check(pid, now) then
-                    Heartbeat.alive[pid] = false
-                    -- Fix: we emit a unique nonce per challenge; only a running client can echo it back.
-                    local nonce = make_nonce()
-                    Heartbeat.aliveNonce[pid] = nonce
-                    Heartbeat.challengeStartedAt[pid] = now
-                    challenged[#challenged + 1] = pid
-                    TriggerClientEvent("checkalive", pid, nonce)
+                    -- Do not overwrite a challenge still awaiting its response.
+                    if not Heartbeat.aliveNonce[pid] then
+                        local nonce = make_nonce()
+                        Heartbeat.alive[pid] = false
+                        Heartbeat.aliveNonce[pid] = nonce
+                        Heartbeat.challengeStartedAt[pid] = now
+                        challenged[#challenged + 1] = { pid = pid, nonce = nonce, sentAt = now }
+                        TriggerClientEvent("checkalive", pid, nonce)
+                    end
                 end
             end
 
-            Citizen.Wait(Heartbeat.checkInterval + Heartbeat.responseGraceSeconds)
+            -- CheckInterval is the cadence between challenge batches, not
+            -- additional response time. Wait for the response window only.
+            Citizen.Wait(Heartbeat.responseGraceSeconds * 1000)
 
             local checked_at = seconds()
-            for _, pid in ipairs(challenged) do
-                if is_ready_for_alive_check(pid, checked_at) then
-                    if not Heartbeat.alive[pid] then
-                        Heartbeat.aliveNonce[pid] = nil
-                        Heartbeat.challengeStartedAt[pid] = nil
+            for _, entry in ipairs(challenged) do
+                local pid = entry.pid
+                -- Ignore dropped/reconnected players and challenges that
+                -- have already been answered or superseded.
+                if is_connected(pid) and Heartbeat.aliveNonce[pid] == entry.nonce then
+                    Heartbeat.aliveNonce[pid] = nil
+                    Heartbeat.challengeStartedAt[pid] = nil
+
+                    if is_ready_for_alive_check(pid, checked_at) then
                         Heartbeat.failureCount[pid] = (Heartbeat.failureCount[pid] or 0) + 1
 
-                        -- Require sustained failure of both independent heartbeat signals.
-                        -- Brief client stalls and delayed net events should not kick players.
+                        -- Missing challenges alone are inconclusive during lag;
+                        -- require a simultaneous absence of regular heartbeats.
                         local last = Heartbeat.playerHeartbeats[pid]
                         local lastValid = math.max(last or 0, Heartbeat.recentRecovery[pid] or 0)
-                        if Heartbeat.failureCount[pid] >= Heartbeat.maxFailures and (checked_at - lastValid) > Heartbeat.timeoutThreshold then
+                        if Heartbeat.failureCount[pid] >= Heartbeat.maxFailures
+                            and (checked_at - lastValid) > Heartbeat.timeoutThreshold then
                             Heartbeat.banPlayer(pid, "Failed alive checks")
                             Heartbeat.failureCount[pid] = 0
                         end
-                    else
-                        Heartbeat.failureCount[pid] = 0
                     end
+                end
+            end
+            -- Preserve the intended configurable challenge cadence.
+            Citizen.Wait(math.max(1000, Heartbeat.checkInterval - Heartbeat.responseGraceSeconds * 1000))
+        end
+    end)                 end
                 end
             end
         end
